@@ -57,7 +57,18 @@ verhalten sich deshalb möglicherweise anders als auf echter Hardware.
    (auch der Ausnahme-Rahmen bei unerlaubten Befehlen, Privilegverletzung, `CHK`, Division durch 0). Ein Lauf vergleicht
    rund 2,5 Millionen Fälle (`m68k_diff_musashi 40`); Ergebnis über mehrere Seeds: **0 Abweichungen**. Auch unter
    AddressSanitizer/UBSan ohne Befund. Musashi wird zur Laufzeit geholt und nicht in dieses Repository aufgenommen.
-2. **Unit-Tests** (`tests/test_cpu.cpp`, rund 52 000 Prüfungen): von Hand gerechnete Ergebnisse und Flags,
+2. **Differenztest für Befehlsfolgen** (`tools/diff_musashi_seq.cpp`, ebenfalls über `tools/run_diff_musashi.sh`): Zufällige **Programme** aus 2–10
+   Befehlen (rund 15 % aus den Familien, deren Ergebnis von früheren Befehlen abhängt: `ADDX`/`SUBX`/`NEGX`, `ABCD`/`SBCD`/`NBCD`, `ROXL`/`ROXR`,
+   `MOVE` von/nach SR/CCR/USP, `LINK`/`UNLK`, `MOVEM`, `RTE`/`RTR`, `TRAP`, `CHK`, …) laufen in beiden Emulatoren im Gleichschritt; **nach jedem Befehl**
+   werden Register, SR, PC und jedes geschriebene Byte verglichen. Die Vektortabelle zeigt auf kleine Handler (`RTE`, bei unerlaubtem Befehl, Privilegverletzung
+   und Line A/F `ADDQ.L #2,2(A7)` + `RTE`), sodass ein Programm nach einer Ausnahme weiterläuft; Ausnahmerahmen werden also von `RTE` wieder abgebaut, Stapelwechsel
+   zwischen Benutzer- und Supervisor-Modus, Auto-Inkrement/-Dekrement und das X-Flag über mehrere Befehle hinweg sind Teil des Vergleichs. Musashi wird dafür mit
+   **Trace-Emulation** gebaut, sodass auch die Trace-Ausnahme verglichen wird (ein vorheriges `MOVE …,SR` setzt das T-Bit). Ergebnis: **0 Abweichungen** über
+   60 000 Programme (rund 300 000 Befehle, rund 60 000 Ausnahmen). Der Test hat Wirkung: Eine absichtlich falsche Trace-Entscheidung (nach statt vor dem Befehl) wird sofort
+   gefunden, vom Einzelbefehlstest nicht. Nicht verglichen werden Programme mit **Adressfehlern** (Musashi ist ohne gebaut), mit `STOP` und solche, in denen der
+   **PC Bits oberhalb von Bit 23** bekommt (ein `RTE`/`RTS`/`JMP` auf eine solche Adresse): Musashi behält das obere Byte des PC und legt es später wieder auf den Stapel, dieser
+   Kern maskiert den PC auf 24 Bit; was der echte MC68000 dort tut, lässt sich mit diesem Test nicht entscheiden (praktisch kommt es in Amiga-Programmen nicht vor).
+3. **Unit-Tests** (`tests/test_cpu.cpp`, rund 52 000 Prüfungen): von Hand gerechnete Ergebnisse und Flags,
    Adressierungsarten, `MOVEM`/`LINK`/`MOVEP`, Unterprogramme und Schleifen, alle Ausnahmen mit Rahmeninhalt,
    Stapelwechsel Benutzer/Supervisor, Interrupts, `STOP`, Trace, Ablaufsteuerung, Hooks – und ein Abgleich mit dem
    Dekoder für alle 65536 Opcodes (was der Disassembler als Befehl kennt, ist für den Prozessor nicht „illegal“).
@@ -81,7 +92,8 @@ dem Verhalten von Musashi (so wie die meisten Emulatoren):
   (sichtbar nur über Lese-Watchpoints bzw. -Hooks); Befehlsholen und Vektorlesen laufen über `readOverride`
   (Code im ROM, Vektortabelle über das Overlay), aber nicht über `accessHook` und Watchpoints.
 - Interrupts kommen nur über `interrupt()`, nicht von Geräten; der Differenztest deckt Adressfehler, Interrupts,
-  Trace, `STOP` und Befehlsfolgen nicht ab (Musashi ist ohne Adressfehler gebaut) – dafür gibt es die Unit-Tests.
+  `STOP` und Adressfehler nicht ab (Musashi ist ohne Adressfehler gebaut) – dafür gibt es die Unit-Tests. Befehlsfolgen und Trace werden seit dem
+  Folgentest verglichen (siehe oben). Das obere Byte des PC wird nicht nachgebildet: der PC ist 24 Bit breit.
 
 ## Plattformen
 

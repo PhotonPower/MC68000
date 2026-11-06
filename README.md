@@ -44,7 +44,8 @@ und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 - Einzelschritt, Breakpoints, Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks für Geräte
 - nur Register und Speicher zählen, **kein Timing**
 - **Differenztest gegen Musashi:** alle 65536 Opcodes mit zufälligen Zuständen, jeweils alle Register, SR und jedes
-  geschriebene Byte verglichen (rund 2,5 Millionen Fälle pro Lauf, 0 Abweichungen); dazu Unit-Tests
+  geschriebene Byte verglichen (rund 2,5 Millionen Fälle pro Lauf, 0 Abweichungen); dazu **Befehlsfolgen** (zufällige Programme, Vergleich nach
+  jedem Befehl, auch Ausnahmerahmen, `RTE`, Stapelwechsel, X-Flag und Trace; 0 Abweichungen) und Unit-Tests
 
 **Agenten-Schnittstelle** (`m68ktool serve`, [docs/agent-protocol.md](docs/agent-protocol.md))
 - JSON-Zeilenprotokoll nach dem Vorbild von `z80tool serve`: assemblieren, disassemblieren, Speicher lesen/schreiben, Register,

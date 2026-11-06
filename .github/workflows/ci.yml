@@ -61,5 +61,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Differential test (all 65536 opcodes, random states)
-        run: tools/run_diff_musashi.sh 10 1
+      - name: Differential test (all 65536 opcodes, random states; 20000 random instruction sequences)
+        run: tools/run_diff_musashi.sh 10 1 20000

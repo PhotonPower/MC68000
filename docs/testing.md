@@ -63,9 +63,12 @@ Die CI führt beide Prüfungen aus.
 ## Emulator gegen Musashi
 
 ```sh
-tools/run_diff_musashi.sh 4 1        # Versuche je Opcode, Seed (holt und baut Musashi in einem Temp-Verzeichnis)
+tools/run_diff_musashi.sh 4 1 20000  # Versuche je Opcode, Seed, Zahl der Folgen-Programme (holt und baut Musashi in einem Temp-Verzeichnis)
 ```
+
+Das Skript führt zwei Tests aus: **Einzelbefehle** (alle 65536 Opcodes) und **Befehlsfolgen** (zufällige Programme aus 2–10 Befehlen, Vergleich nach jedem Befehl, Musashi mit
+Trace-Emulation); einzelne Folgen lassen sich mit `m68k_diff_musashi_seq <programme> <seed> <nummer>` Schritt für Schritt ausgeben.
 
 Details und Ergebnis siehe [emulator.md](emulator.md#wie-der-kern-geprüft-ist): alle 65536 Opcodes, zufällige Zustände,
 Vergleich aller Register und jedes geschriebenen Bytes. Die CI führt einen Lauf mit 10 Versuchen je Opcode aus
-(rund 600 000 Fälle). Noch nicht eingesetzt sind öffentliche Einzelbefehls-Testsätze.
+(rund 600 000 Fälle) und 20 000 Folgen-Programme. Noch nicht eingesetzt sind öffentliche Einzelbefehls-Testsätze.

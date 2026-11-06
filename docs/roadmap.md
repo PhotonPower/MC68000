@@ -40,7 +40,7 @@ Erledigt ([emulator.md](emulator.md), [agent-protocol.md](agent-protocol.md), [a
 
 Offen (Ideen):
 - weitere `exec`-/`dos`-Funktionen (Listen, Nachrichten/Ports, `Open` auf eine Dateiabbildung, `Printf`-Familie) – nur, wo die Semantik sicher bekannt ist
-- Befehlsfolgen im Differenztest (Zustand über mehrere Befehle), Adressfehler gegen Musashi mit eingeschalteter Emulation
+- Adressfehler gegen Musashi mit eingeschalteter Emulation (Befehlsfolgen sind seit 0.5 im Differenztest)
 
 ## Meilenstein 0.4 – Monitor (erledigt)
 

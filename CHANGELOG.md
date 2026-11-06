@@ -7,6 +7,10 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Differenztest für Befehlsfolgen gegen Musashi** (`tools/diff_musashi_seq.cpp`, in `tools/run_diff_musashi.sh` und der CI): zufällige Programme aus 2–10 Befehlen
+  im Gleichschritt, Vergleich nach jedem Befehl (Register, SR, PC, geschriebene Bytes), Handler für Ausnahmen, Musashi mit Trace-Emulation. 0 Abweichungen über
+  60 000 Programme; eine absichtlich falsche Trace-Entscheidung wird gefunden. Nicht verglichen: Adressfehler, `STOP`, PC über 24 Bit (Musashi behält das obere Byte,
+  dieser Kern maskiert; siehe docs/emulator.md).
 - **Hunk-Ausgabe des Assemblers:** `SECTION name[,CODE|DATA|BSS][_C|_F]` (Kurzformen `CODE`/`DATA`/`BSS`), `XDEF`, Relokationen für lange absolute Adressen,
   lange Direktwerte und `DC.L` (`HUNK_RELOC32`), `m68ktool asm --hunk [--hunk-symbols]`, `m68k::writeHunkFile`. Labels sind „Offset in Sektion“;
   PC-relative Verweise zwischen Sektionen und Differenzen/Summen von Adressen verschiedener Sektionen werden abgelehnt. Absolute Programme sind unverändert.
