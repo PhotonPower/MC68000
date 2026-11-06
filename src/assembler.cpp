@@ -179,8 +179,8 @@ struct Pass {
                 error(l.number, "empty item in " + l.mnemonic);
                 continue;
             }
-            if ((item[0] == '"' || item[0] == '\'') && item.size() >= 2 && item.back() == item[0] && unit == 1 &&
-                item.size() > 3) {
+            // "text" is always a string (also one character or empty); 'AB' is a string, 'A' a character constant
+            if (unit == 1 && item.size() >= 2 && item.back() == item[0] && (item[0] == '"' || (item[0] == '\'' && item.size() > 3))) {
                 for (std::size_t k = 1; k + 1 < item.size(); ++k) out.push_back(static_cast<Byte>(item[k]));
                 continue;
             }

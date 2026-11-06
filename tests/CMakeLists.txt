@@ -1,5 +1,5 @@
 # Each suite is one executable without an external test framework (see test_util.hpp).
-foreach(name format memory expression decoder assembler roundtrip image_io hunk disassembler cpu session)
+foreach(name format memory expression decoder assembler roundtrip image_io hunk disassembler cpu session reverse)
   add_executable(test_${name} test_${name}.cpp)
   target_link_libraries(test_${name} PRIVATE m68kcore)
   m68k_set_warnings(test_${name})

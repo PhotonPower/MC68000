@@ -42,10 +42,18 @@ Offen (Ideen):
 
 - `m68k::Monitor` und `m68ktool monitor` mit den Befehlen aus [monitor.md](monitor.md)
 
-## Meilenstein 0.5 – Reverse Engineering
+## Meilenstein 0.5 – Reverse Engineering (Werkzeuge fertig, Orchestrator offen)
 
-- Annotationen, kommentiertes Listing mit Neu-Assemblieren-Prüfung
-- Orchestrator (`agent/`, Python) für Ollama, Amiga-Plattformprofil mit LVO-Tabelle (Bibliotheksaufrufe über `A6`)
+Erledigt ([reverse-engineering.md](reverse-engineering.md)): Annotationen (Namen, Dokumentation, Variablen, Datenbereiche, Kommentare,
+Projektdatei), Codefluss-Analyse mit Routinen/Aufrufgraph/Bibliotheksaufrufen, **verifiziertes** Listing (neu assembliert und
+verglichen), die Protokollbefehle `analyze`, `routines`, `listing`, `ann_*`.
+
+Offen:
+- **Orchestrator** `agent/m68k_annotate.py` (Python, Ollama) nach dem Vorbild von `z80_annotate.py`: Werkzeuge `run_routine` (aus
+  `checkpoint`/`call`/`diff`/`io`/`rollback`), Routinen von unten nach oben, Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Bericht;
+  getestet gegen einen Mock-Ollama
+- Stubs für Amiga-Bibliotheksaufrufe (`exec`, `dos`) samt ExecBase und `A6`
+- Erkennung von Sprungtabellen und Datentypen
 
 ## Danach (Ideen)
 

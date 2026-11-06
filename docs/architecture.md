@@ -53,6 +53,9 @@ derselben Bibliothek.
 | `json.hpp`                          | kleiner JSON-Baustein (Parser/Ausgabe, Einfügereihenfolge)   | fertig  |
 | `amiga.hpp`                         | `Amiga500`: Speicherkarte, ROM-Overlay, Geräte-Schreibprotokoll | fertig  |
 | `session.hpp`                       | `Session`: eine Maschine, Marken, Checkpoints; JSON-Befehle  | fertig  |
+| `analysis.hpp`                      | Codefluss-Analyse: Befehle, Routinen, Aufrufgraph, Bibliotheksaufrufe | fertig  |
+| `annotations.hpp`                   | Namen, Dokumentation, Variablen, Datenbereiche, Kommentare; JSON | fertig  |
+| `listing.hpp`                       | verifiziertes, neu assemblierbares Listing                   | fertig  |
 | `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
 
 ## Die Befehlstabelle

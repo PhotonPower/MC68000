@@ -53,11 +53,15 @@ und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 **Amiga 500** ([docs/amiga500.md](docs/amiga500.md)): Speicherkarte (Chip-/Fast-/Slow-RAM, Custom-Chip- und CIA-Register als
 Speicher mit Schreibprotokoll, ROM mit Overlay); Amiga-Hunk-Programme laden und starten. Keine Geräte (kein Ton/Video/Disk).
 
+**Reverse Engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): Codefluss-Analyse mit Routinen und
+Aufrufgraph (`analyze`, `routines`), Annotationen (Namen, Dokumentation, Datenbereiche, Kommentare, Projektdatei) und ein
+**verifiziertes Listing** – aus den echten Bytes erzeugt, neu assembliert und Byte für Byte verglichen, sodass kein Name und
+kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen getestet).
+
 ## Geplant
 
 - **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
-- **Reverse Engineering mit lokalem LLM** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): Analyse- und
-  Annotationsbefehle, Orchestrator; Stubs für Amiga-Bibliotheksaufrufe
+- **Orchestrator für ein lokales LLM** (Ollama, nach dem Vorbild von `z80_annotate.py`); Stubs für Amiga-Bibliotheksaufrufe
 - Amiga-Hunk-*Ausgabe* des Assemblers
 
 ## Schnellstart

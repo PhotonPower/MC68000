@@ -3,11 +3,14 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "m68k/amiga.hpp"
+#include "m68k/analysis.hpp"
+#include "m68k/annotations.hpp"
 #include "m68k/cpu.hpp"
 #include "m68k/json.hpp"
 #include "m68k/memory.hpp"
@@ -66,6 +69,14 @@ private:
     std::map<std::string, Checkpoint> checkpoints_;
     std::vector<Watch> watches_;
     std::vector<DeviceWrite> noLog_;
+
+    // ---- reverse engineering (see session_analysis.cpp) ----
+    Annotations ann_;
+    std::unique_ptr<Memory> analysisView_;   ///< the bytes the analysis was made from
+    std::unique_ptr<Analysis> analysis_;
+    std::set<Address> analysisEntries_;
+    std::vector<std::pair<Address, Address>> linearRanges_;
+    std::optional<std::pair<Address, Address>> programRange_;  ///< extent of what was loaded or assembled last
 };
 
 }  // namespace m68k

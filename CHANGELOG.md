@@ -7,6 +7,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Meilenstein 0.5 (Werkzeuge):** Reverse-Engineering-Befehle im Agenten-Protokoll: `analyze`, `routines`, `listing`, `ann_label`,
+  `ann_routine`, `ann_variable`, `ann_data`, `ann_comment`, `ann_remove`, `ann_title`, `ann_list`, `ann_save`, `ann_load`.
+  Neue Bausteine `m68k::Analysis` (Codefluss, Routinen, Aufrufgraph, Bibliotheksaufrufe), `m68k::Annotations` und `renderListing`
+  (verifiziert: neu assembliert und verglichen). Tests `reverse` (rund 340 Prüfungen, davon 150 Zufallslistings).
+- Behoben: `DC.B "a"` (ein Zeichen in doppelten Anführungszeichen) wurde nicht als Zeichenkette erkannt.
 - **Meilenstein 0.3, zweiter Teil:** `m68ktool serve` – JSON-Zeilenprotokoll für LLM-Agenten (`m68k::Session`, nach dem Vorbild
   von `z80tool serve`), Snapshots (`m68k/snapshot.hpp`: Speicher und Datei, Speicher-Diff), `m68k::Amiga500` (Speicherkarte,
   Schreibprotokoll der Custom-/CIA-Register, ROM-Overlay), JSON-Baustein; Hunk-Programme per `load_file` laden und starten.

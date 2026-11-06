@@ -88,8 +88,24 @@ Gesamtzähler seit dem letzten `reset`.
 | `machine` | `type`, `chip_kb?` (512), `slow_kb?` (0), `fast_kb?` (0) | Maschine wählen (siehe oben) |
 | `help` | – | Befehlsliste |
 
-Noch nicht umgesetzt (Meilenstein 0.5, [reverse-engineering.md](reverse-engineering.md)): `analyze`, `routines`, `listing`,
-`ann_*` – die Analyse- und Annotationsbefehle des Z80-Protokolls.
+### Reverse Engineering ([reverse-engineering.md](reverse-engineering.md))
+
+| Befehl | Argumente | Wirkung / Antwort |
+|---|---|---|
+| `analyze` | `entries[]`, `from?`, `to?`, `linear?{from,to}`, `reset?` | Codefluss ab den Einstiegspunkten analysieren (Standard: der PC; Bereich: zuletzt geladen/assembliert, sonst `from`/`to` angeben); `linear` dekodiert zusätzlich einen Bereich der Reihe nach; `reset` vergisst frühere Einstiegspunkte. Antwort: `code_bytes`, `instructions`, `routines`. Nötig für `routines` und `listing`. |
+| `routines` | `order?` (`bottom_up`, `address`), `undocumented_only?` | Unterprogramme: `addr`, `name` (oder `sub_XXXXXX`), `documented`, `start`/`end`, `instructions`, `bytes`, `depth`, `callers`, `callees`, `external_calls`, `library_calls:[{addr,offset}]` |
+| `listing` | `from?`, `to?`, `verify?` (true), `max_chars?`, `addresses?` | kommentiertes, **neu assemblierbares** Listing; `verified` = neu assembliert, identische Bytes; `unnamed` = Platzhalter ohne echten Namen; `truncated` bei `max_chars` |
+| `ann_label` | `addr`, `name` | Namen vergeben; ungültige, reservierte, doppelte Namen werden mit Begründung abgewiesen |
+| `ann_routine` | `addr`, `name?`, `summary?`, `inputs?`, `outputs?`, `clobbers?`, `confidence?` (`high`, `medium`, `low`) | Routine dokumentieren |
+| `ann_variable` | `name`, `addr`, `size?` (1), `comment?` | Variable/Tabelle benennen |
+| `ann_data` | `addr`, `length`, `kind?` (`bytes`, `words`, `longs`, `text`, `pointers`), `name?`, `comment?` | Bereich als Daten kennzeichnen; abgelehnt, wenn er analysierten Code enthält oder einen anderen Datenbereich überlappt |
+| `ann_comment` | `addr`, `text`, `block?` | Kommentar zu einem Befehl (oder `block:true`: Block über der Zeile); Adressen **mitten in einem Befehl** werden mit Erklärung abgelehnt |
+| `ann_remove` | `addr` | Namen, Dokumentation, Variable, Datenbereich und Kommentare an der Adresse entfernen |
+| `ann_title` | `title` | Titel im Listing |
+| `ann_list` | – | alle Annotationen als JSON |
+| `ann_save` / `ann_load` | `file` | Annotationen als JSON-Datei speichern / laden (*braucht `--allow-files`*) |
+
+Namen aus den Annotationen sind danach in allen Adress-Argumenten verwendbar (`"until":"copy_block"`) und erscheinen in `dis`.
 
 ## Typischer Ablauf
 
