@@ -8,6 +8,8 @@ modernem C++20 – das Schwesterprojekt von [PhotonPower/Z80](https://github.com
 derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Kommandozeilenwerkzeug
 (`m68ktool`) und ein Emulator als Ausführungsumgebung für einen lokalen LLM-Agenten.
 
+> **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
+
 > **Status: Version 0.1 – Projektgerüst.** Build, Tests, CI und Dokumentation stehen; die eigentlichen
 > Werkzeuge werden nach der [Roadmap](docs/roadmap.md) umgesetzt. Die Dokumente unter `docs/`
 > beschreiben das **Zielbild** und sind am Anfang jeweils als „geplant“ gekennzeichnet, soweit noch
@@ -57,6 +59,7 @@ Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 
 | Dokument                                                 | Inhalt                                                  |
 |----------------------------------------------------------|---------------------------------------------------------|
 | [docs/architecture.md](docs/architecture.md)             | Aufbau des Codes, Komponenten, Besonderheiten des 68000 |
+| [docs/amiga500.md](docs/amiga500.md)                     | Zielplattform: Speicherlayout, Systemaufrufe, Hunk/ADF  |
 | [docs/instruction-set.md](docs/instruction-set.md)       | Befehlssatz-Überblick: Register, Adressierung, Opcode-Gruppen |
 | [docs/assembler-syntax.md](docs/assembler-syntax.md)     | Quelltextformat, Ausdrücke, Pseudobefehle               |
 | [docs/formats.md](docs/formats.md)                       | Kommentardatei, S-Record, Ausgabeformate                |

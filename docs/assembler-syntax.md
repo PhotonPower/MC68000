@@ -5,7 +5,7 @@
 
 ## Grundformat
 
-Motorola-Syntax, **Quelle zuerst, Ziel zuletzt**: `MOVE.L D0,(A0)+`.
+Ausschließlich Motorola-Syntax (Entscheidung; keine GNU-Syntax), **Quelle zuerst, Ziel zuletzt**: `MOVE.L D0,(A0)+`.
 
 ```
 [label[:]]  mnemonic[.größe]  [operand[,operand]]  [; kommentar]
@@ -43,10 +43,10 @@ darstellen lässt, sonst `.L`.
 
 ## Ausgabe und Fehler
 
-Raw-Binary, Motorola S-Record, Listing und Symboltabelle ([formats.md](formats.md)). Fehler tragen
+Raw-Binary, Motorola S-Record, Amiga-Hunk-Executable, Listing und Symboltabelle ([formats.md](formats.md)). Fehler tragen
 die Zeilennummer; alle Fehler eines Laufs werden gesammelt. Ein Befehl an einer ungeraden Adresse
 ist ein Fehler (der 68000 würde einen Adressfehler auslösen).
 
 ## Nicht vorgesehen in 0.2
 
-Makros, bedingte Assemblierung, `INCLUDE`, Befehle des MC68010 und höher.
+Makros, bedingte Assemblierung, `INCLUDE`, Befehle des MC68010 und höher; Amiga-Assembler-Eigenheiten (z. B. `SECTION`, `XDEF`) erst, wenn Hunk-Ausgabe mit mehreren Segmenten ansteht.

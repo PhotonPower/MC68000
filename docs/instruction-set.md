@@ -75,6 +75,6 @@ Detail ist für den Emulator wichtig (siehe [emulator.md](emulator.md)).
 
 ## Varianten
 
-Dieses Projekt zielt auf den **MC68000**. Der MC68008 (8-Bit-Datenbus, 20 Bit Adressen) und der
-MC68010 (u. a. `MOVE from CCR`, `RTD`, `MOVEC`, Vektorbasisregister) unterscheiden sich in Details;
-ob sie unterstützt werden, ist eine offene Frage ([roadmap.md](roadmap.md)).
+Dieses Projekt unterstützt **nur den MC68000** (Entscheidung, siehe [roadmap.md](roadmap.md)). MC68008,
+MC68010 und höher (u. a. `MOVEC`, `RTD`, Vektorbasisregister, erweiterte Adressierung) sind kein Ziel;
+ihre Opcodes gelten als unerlaubte Befehle.

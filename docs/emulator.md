@@ -30,6 +30,6 @@ dort nachgebildet, wo es durch Tests belegt ist.
 
 ## Plattformen
 
-Der Kern kennt keine bestimmte Maschine; Geräte (z. B. Amiga-Custom-Chips, Atari-ST-Hardware,
-Mega-Drive-VDP) kommen als Hook-Module hinzu. Die Zielplattform ist offen
-([roadmap.md](roadmap.md#offene-fragen)).
+Der Kern kennt keine bestimmte Maschine; Geräte kommen als Hook-Module hinzu. Zielplattform ist der
+**Amiga 500** ([amiga500.md](amiga500.md)): Speicherkarte mit ROM-Overlay, Chip-RAM, Custom-Chip-Registern
+und CIAs.

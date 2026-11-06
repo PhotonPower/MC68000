@@ -29,8 +29,15 @@ Textformat mit Zeilen `S0`/`S1`/`S2`/`S3`/`S7`/`S8`/`S9`; für den 24-Bit-Adress
 genügen `S2` (24-Bit-Adressen) mit Abschluss `S8`. Jede Zeile hat eine Prüfsumme (Einerkomplement
 der Summe aller Bytes nach `S<typ>`).
 
+## Amiga-Hunk (Eingabe und Ausgabe, geplant)
+
+Ausführbare Amiga-Dateien bestehen aus Blöcken (`HUNK_HEADER`, `HUNK_CODE`, `HUNK_DATA`, `HUNK_BSS`,
+`HUNK_RELOC32`, `HUNK_SYMBOL`, `HUNK_END`). Der Lader legt die Segmente an eine Basisadresse und wendet die
+Relokationen an; Symbole aus `HUNK_SYMBOL` können als Namen im Disassembler dienen. Details in
+[amiga500.md](amiga500.md).
+
 ## Systemabbilder
 
-Kickstart-, TOS- und andere ROM-Abbilder werden nur als Raw-Binary geladen (z. B. an eine
+Kickstart-ROM-Abbilder (256 KiB, vom Benutzer bereitgestellt) und andere ROM-Abbilder werden nur als Raw-Binary geladen (z. B. an eine
 Basisadresse) und gehören nicht ins Repository. Snapshot-Dateien des Emulators bekommen ein eigenes,
 dokumentiertes Format (siehe [emulator.md](emulator.md)).

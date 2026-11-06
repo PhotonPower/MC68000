@@ -9,5 +9,5 @@ verifiziert wird – das Modell kann den Code nicht verändern.
 
 Voraussetzungen, die erst geschaffen werden müssen: Disassembler mit Ablaufanalyse, Emulator mit
 Snapshots, `serve`-Protokoll, Annotationen (Namen, Kommentare, Datenbereiche) und mindestens ein
-Plattformprofil mit bekannten Systemaufrufen (bei 68000-Systemen häufig über `TRAP #n` oder
-Line-A/Line-F-Ausnahmen, nicht über feste Sprungadressen wie beim CPC).
+Plattformprofil mit bekannten Systemaufrufen. Beim Amiga 500 sind das Bibliotheksaufrufe `JSR -offset(A6)`;
+sie werden über eine LVO-Tabelle (Bibliothek, Offset, Funktionsname) benannt ([amiga500.md](amiga500.md)).
