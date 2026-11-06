@@ -18,9 +18,9 @@ Projektgerüst (0.1): Build, Tests, CI, Dokumentation, `types`/`format`/`memory`
 
 ## Meilenstein 0.3 – Emulator
 
-- `Cpu`: alle Befehle, Flags, Supervisor/Benutzer, Ausnahmen und Stapelrahmen, Interrupts, Zyklen
+- `Cpu`: alle Befehle, Flags, Supervisor/Benutzer, Ausnahmen und Stapelrahmen, Interrupts (auf Anforderung); kein Timing
 - Breakpoints, Watchpoints, Checkpoints, Snapshots, Speicher-/E/A-Hooks
-- Amiga-500-Speicherkarte (ROM-Overlay, Chip-RAM, Custom-Register, CIA), Kickstart-Boot als Ziel
+- Amiga-500-Speicherkarte (ROM-Overlay, Chip-RAM, Custom-Register als einfacher Block, CIA nach Bedarf)
 - `Session` und `m68ktool serve`
 - Tests: Befehlstests, Zufallscode mit Snapshot-Wiederholung, Kreuzprüfung
 
@@ -36,8 +36,7 @@ Projektgerüst (0.1): Build, Tests, CI, Dokumentation, `types`/`format`/`memory`
 ## Danach (Ideen)
 
 - Makros, `INCLUDE`, bedingte Assemblierung
-- Prefetch-/busgenaues Timing
-- weitere Amiga-Gerätemodelle (Blitter, Copper, Ton, Disketten)
+- Stubs für häufige Amiga-Bibliotheksfunktionen (`exec`, `dos`), die ihr Ergebnis im Speicher nachbilden
 - Projektdatei (Kommentare, Symbole, Bereiche) statt vieler Kommandozeilenoptionen
 
 ## Entscheidungen
@@ -45,12 +44,11 @@ Projektgerüst (0.1): Build, Tests, CI, Dokumentation, `types`/`format`/`memory`
 1. **Zielplattform:** Amiga 500 ([amiga500.md](amiga500.md)). Der Kern bleibt maschinenunabhängig.
 2. **Syntax:** nur Motorola-Syntax; die GNU-Syntax (`move.l %d0,%a0@+`) ist kein Ziel.
 3. **Prozessor:** nur MC68000 (kein 68008, 68010 oder höher).
+4. **Genauigkeit:** nur Speicherinhalte und Register zählen; kein Timing (keine Zyklen, kein Prefetch,
+   keine Bus-/DMA-Modelle).
+5. **Monitor:** Bedienung wie beim Z80-Monitor, keine Anlehnung an historische Monitore.
+6. **Amiga-Umfang:** keine Ton-, Disketten- oder Bildschirmausgabe, kein Kickstart-Boot als Ziel.
 
 ## Offene Fragen
 
-1. **Genauigkeit:** reicht befehls-/zyklengenau, oder soll der Emulator später busgenau werden
-   (relevant für Amiga-Timing mit Blitter-/DMA-Konkurrenz)?
-2. **Befehlsstil des Monitors:** wie beim Z80-Monitor, oder Anlehnung an einen historischen
-   Amiga-Monitor (z. B. aus Devpac/AsmOne)?
-3. **Amiga-Umfang:** reicht „Kickstart bootet und zeichnet Text/Bild“, oder sollen Disketten (ADF) und
-   Ton mitgedacht werden?
+Derzeit keine. Neue Fragen entstehen mit Meilenstein 0.2 (z. B. Namensgebung der Bibliotheks-LVO-Tabelle).

@@ -21,7 +21,7 @@ Die Tests brauchen kein externes Framework; `tests/test_util.hpp` stellt `CHECK`
 | `expression`, `assembler`, `decoder` | wie im Z80-Projekt, mit erwarteten Bytes aus dem Programmer's Reference Manual |
 | `roundtrip`  | **exhaustiv**: alle 65536 ersten Opcode-Wörter (mit repräsentativen Erweiterungswörtern); was der Dekoder als Befehl erkennt, muss der Assembler zu denselben Bytes zurückübersetzen |
 | `robustness` | feste Zufallsfolge: `assemble(disassemble(x)) == x`; zufällige Quelltexte dürfen den Assembler nicht abstürzen lassen |
-| `cpu`        | Flags, BCD, Multiplikation/Division, Ausnahmen und Stapelrahmen, Privilegien, Adressfehler, Interrupts, Zyklen, Zufallscode mit Wiederholung aus Snapshot |
+| `cpu`        | Flags, BCD, Multiplikation/Division, Ausnahmen und Stapelrahmen, Privilegien, Adressfehler, Interrupts, Zufallscode mit Wiederholung aus Snapshot |
 
 ## Kreuzprüfung gegen unabhängige Werkzeuge (geplant)
 
@@ -31,7 +31,7 @@ prüfen: Verfügbarkeit, Lizenz, Abdeckung):
 
 - ein unabhängiger 68000-Assembler/Disassembler (z. B. GNU binutils für m68k, vasm) für `tools/crosscheck_*.py`;
 - öffentlich verfügbare Einzelbefehls-Testsätze für den 68000 (Eingangs-/Ausgangszustand je Befehl);
-- ein etablierter Software-Emulator als Gegenprobe für Flags und Zyklen.
+- ein etablierter Software-Emulator als Gegenprobe für Flags und Ausnahmen (Zyklen werden nicht verglichen).
 
 Welche davon tatsächlich eingesetzt werden, wird in dieser Datei festgehalten, sobald sie
 ausprobiert wurden.

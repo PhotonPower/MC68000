@@ -65,8 +65,6 @@ derselben Bibliothek.
 - **Big-Endian, gerade Adressen.** `Memory` liefert rohe Bytes; Adressfehler gehören in die CPU.
 - **Ausnahmen und Privilegien.** Der Emulator braucht Supervisor-/Benutzermodus, zwei Stapelzeiger
   und eine Ausnahmebehandlung mit Stapelrahmen – beim Z80 gab es nur Interrupts.
-- **Zyklen.** Der 68000 erledigt Buszugriffe in Vielfachen von vier Takten; die Zeit pro Befehl
-  hängt von Adressierungsart und Operandengröße ab ([emulator.md](emulator.md)).
 
 ## Erweiterungspunkte
 

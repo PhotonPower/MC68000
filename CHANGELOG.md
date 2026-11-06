@@ -7,7 +7,8 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
-- Entscheidungen festgehalten: Zielplattform Amiga 500, nur Motorola-Syntax, nur MC68000; neues Dokument
+- Entscheidungen festgehalten: Zielplattform Amiga 500, nur Motorola-Syntax, nur MC68000, kein Timing
+  (nur Speicherinhalte zählen), Monitor wie beim Z80, keine Ton-/Disketten-/Bildschirmausgabe; neues Dokument
   `docs/amiga500.md`, Roadmap, Syntax-, Format- und Emulator-Doku angepasst.
 - Projektgerüst nach dem Vorbild von [PhotonPower/Z80](https://github.com/PhotonPower/Z80):
   CMake-Build (`m68kcore`, `m68ktool`), CTest, GitHub-Actions-CI (Linux/macOS/Windows, ASan/UBSan),

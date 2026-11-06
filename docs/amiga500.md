@@ -31,16 +31,19 @@ Gegenstück zur Firmware-Tabelle des CPC im Z80-Projekt.
 
 - **Amiga-Hunk-Programme** (ausführbare Dateien): Blöcke wie `HUNK_HEADER`, `HUNK_CODE`, `HUNK_DATA`,
   `HUNK_BSS`, `HUNK_RELOC32`, `HUNK_SYMBOL`, `HUNK_END`; Laden bedeutet Relozieren an eine Basisadresse.
-- **ADF-Diskettenabbilder** (880 KiB) – lesen, um Programme zu extrahieren (später).
 - **Kickstart-ROM-Abbilder** werden vom Benutzer bereitgestellt und nie ins Repository gelegt.
 
-## Geräte für den Emulator (Reihenfolge nach Nutzen)
+## Geräte für den Emulator
 
-1. Speicherkarte mit ROM-Overlay, Chip-RAM, Custom-Register als beschreib-/lesbarer Block (ohne Funktion).
-2. CIA-A/-B soweit nötig für den Start des Kickstart.
-3. Unterbrechungen (Paula/Agnus → IPL-Pegel).
-4. Bildschirmausgabe aus den Bitplane-Registern für das Reverse Engineering (Screenshots für das Modell).
-5. Blitter und Copper, später; Ton und Disketten nur bei Bedarf.
+Entscheidung: Es zählen nur **Speicherinhalte**. Deshalb gibt es kein Timing, keine Ton-, Disketten-
+oder Bildschirmausgabe.
 
-Ob der Kickstart bis zum Bildschirm bootet, ist ein Ziel für Meilenstein 0.3/0.5 – so wie die
-CPC-Firmware im Z80-Projekt.
+1. Speicherkarte mit ROM-Overlay, Chip-RAM und Custom-Register-Bereich als einfach les-/schreibbarer
+   Block (Schreibzugriffe lassen sich protokollieren, Funktion wird nicht nachgebildet).
+2. CIA-Register nur so weit, wie ein untersuchtes Programm sie braucht (z. B. ROM-Overlay).
+3. Interrupts nur auf Anforderung des Anwenders (z. B. Auslösen per Kommando), nicht aus Geräten.
+
+Nicht vorgesehen: Blitter, Copper, Paula/Ton, Disketten (ADF), Bildschirmdarstellung der Bitplanes.
+Ein Kickstart-Boot ist damit kein Ziel; Programme und Routinen werden direkt im Speicher gestartet
+(Hunk-Lader, Aufruf einer Adresse) und ihre Speicherergebnisse untersucht. Für Bibliotheksaufrufe
+(`JSR -offset(A6)`) kommen später Stubs, die das Ergebnis im Speicher nachbilden.

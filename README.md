@@ -33,7 +33,7 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 - Querverweise, Kommentardatei, wieder assemblierbarer Quelltext (`--asm`)
 
 **Emulator** ([docs/emulator.md](docs/emulator.md))
-- befehlsgenauer MC68000-Kern mit Ausnahmebehandlung, Supervisor-/Benutzermodus, Zyklen pro Befehl
+- befehlsgenauer MC68000-Kern mit Ausnahmebehandlung und Supervisor-/Benutzermodus; maßgeblich sind die Ergebnisse in Registern und Speicher, kein Timing
 - Einzelschritt, Breakpoints, Watchpoints, Checkpoints, Snapshots, Speicher-/E/A-Hooks
 - Agenten-Schnittstelle `m68ktool serve` (JSON-Zeilenprotokoll, [docs/agent-protocol.md](docs/agent-protocol.md))
 
@@ -64,7 +64,7 @@ Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 
 | [docs/assembler-syntax.md](docs/assembler-syntax.md)     | Quelltextformat, Ausdrücke, Pseudobefehle               |
 | [docs/formats.md](docs/formats.md)                       | Kommentardatei, S-Record, Ausgabeformate                |
 | [docs/usage.md](docs/usage.md)                           | Kommandozeile                                           |
-| [docs/emulator.md](docs/emulator.md)                     | Emulator: Umfang, Genauigkeit, Zustand speichern        |
+| [docs/emulator.md](docs/emulator.md)                     | Emulator: Umfang, Zustand speichern                |
 | [docs/monitor.md](docs/monitor.md)                       | Monitor: Befehle und Beispiel                           |
 | [docs/agent-protocol.md](docs/agent-protocol.md)         | JSON-Protokoll für LLM-Agenten                          |
 | [docs/reverse-engineering.md](docs/reverse-engineering.md) | Programme mit einem lokalen Modell kommentieren       |
