@@ -411,6 +411,7 @@ int main() {
                               "+", "1+", "(", ")", "nosuch", "20", "3000", "zzzz", "0x", "'", "dead", "1000000000000000000000"};
         MonitorOptions fuzzOptions;
         fuzzOptions.maxInstructions = 500;
+        fuzzOptions.allowFiles = false;   // random arguments would otherwise become file names in the working directory
         for (int i = 0; i < 5000; ++i) {
             Monitor m(fuzzOptions);
             std::string line = words[rng() % 33];

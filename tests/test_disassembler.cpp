@@ -1,3 +1,4 @@
+#include <filesystem>
 #include "m68k/disassembler.hpp"
 
 #include <random>
@@ -202,7 +203,7 @@ int main() {
                 while (i < got.size() && i < want.size() && got[i] == want[i]) ++i;
                 std::cerr << "round " << round << ": first difference at offset " << i << " (sizes " << got.size() << "/"
                           << want.size() << ")\n";
-                writeTextFile("m68k_roundtrip_failure.s", src);
+                writeTextFile((std::filesystem::temp_directory_path() / "m68k_roundtrip_failure.s").string(), src);
                 for (std::size_t k = (i >= 6 ? i - 6 : 0); k < i + 8 && k < got.size(); ++k)
                     std::cerr << "   +" << k << ": got " << hexDigits(got[k], 2) << " want " << hexDigits(want[k], 2) << "\n";
                 break;

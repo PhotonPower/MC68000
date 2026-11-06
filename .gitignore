@@ -24,3 +24,12 @@ CMakeUserPresets.json
 
 __pycache__/
 *.pyc
+
+# files the tests write into the working directory (they delete them again; an aborted run can leave them behind)
+m68k_*.tmp
+m68k_*.s19
+m68k_*.hunk
+m68k_*.snap
+m68k_*.bin
+m68k_*_failure.s
+m68k_mon_*.s

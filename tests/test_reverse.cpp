@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <cstdio>
 #include <random>
 
@@ -451,7 +452,7 @@ int main() {
             CHECK(res.verified);
             if (!res.verified) {
                 std::cerr << "round " << round << ": " << res.problem << "\n";
-                writeTextFile("m68k_listing_failure.s", res.text);
+                writeTextFile((std::filesystem::temp_directory_path() / "m68k_listing_failure.s").string(), res.text);
                 break;
             }
         }
