@@ -740,6 +740,7 @@ std::string Monitor::Impl::assembleLine(const std::string& raw) {
     opt.origin = at;
     opt.predefined = m.symbols_;
     const AssemblyResult r = assemble("        " + line + "\n", opt);
+    if (r.hunk) throw MonitorError("SECTION is not available while typing lines; assemble a source file to a hunk with 'm68ktool asm --hunk'");
     if (!r.ok()) {
         if (!label.empty()) m.symbols_.erase(label);
         std::string msg = r.errors[0].message;
@@ -798,6 +799,7 @@ std::string Monitor::Impl::cmdFiles(const std::string& cmd, const std::vector<st
             if (a.size() > 2) opt.origin = address(a[2]);
             opt.predefined = m.symbols_;
             const AssemblyResult r = assemble(readTextFile(file), opt);
+            if (r.ok() && r.hunk) throw MonitorError("a program with SECTIONs is relocatable: assemble it to a hunk file with 'm68ktool asm --hunk', then load it with 'l'");
             if (!r.ok()) {
                 std::string out;
                 for (const Diagnostic& d : r.errors) out += "? " + file + ":" + std::to_string(d.line) + ": " + d.message + "\n";

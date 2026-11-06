@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <sstream>
 
 #include "m68k/encoder.hpp"
@@ -102,14 +103,19 @@ SourceLine parseLine(int number, const std::string& original) {
 
 struct Pass {
     Pass(const std::vector<SourceLine>& l, const AssemblerOptions& o, const std::map<std::string, std::int64_t>& p,
-         std::vector<int>& h)
-        : lines(l), options(o), previous(p), hints(h) {}
+         std::vector<int>& h, bool hunkMode_)
+        : lines(l), options(o), previous(p), hints(h), hunkMode(hunkMode_) {}
 
     const std::vector<SourceLine>& lines;
     const AssemblerOptions& options;
     const std::map<std::string, std::int64_t>& previous;
     std::vector<int>& hints;
 
+    bool hunkMode;
+    std::vector<HunkSection> secs;   // SECTION programs
+    int cur = -1;                    // current section
+    std::vector<std::string> xdefs;
+    std::vector<std::pair<int, unsigned>> relocChecks;  // (line, target section) of every relocation, checked when all sections are known
     std::map<std::string, std::int64_t> symbols;
     std::vector<Segment> segments;
     std::vector<Diagnostic> errors;
@@ -141,7 +147,7 @@ struct Pass {
 
     // Evaluates an expression; reports problems on `line`. `undefinedOk` allows unresolved forward references.
     bool eval(int line, const std::string& text, std::int64_t& out, bool& undefined) {
-        const ExpressionEvaluator ev([this](const std::string& n, std::int64_t& v) { return lookup(n, v); }, pc);
+        const ExpressionEvaluator ev([this](const std::string& n, std::int64_t& v) { return lookup(n, v); }, here());
         const ExprResult r = ev.evaluate(text);
         if (!r.ok) {
             error(line, r.error);
@@ -154,7 +160,16 @@ struct Pass {
     }
     std::string pendingUndefined;
 
+    // The value of the location counter: a plain address, or section-relative in SECTION programs.
+    std::int64_t here() const { return hunkMode && cur >= 0 ? relocatable(static_cast<unsigned>(cur), pc) : static_cast<std::int64_t>(pc); }
+
     void emit(const std::vector<Byte>& bytes) {
+        if (hunkMode) {
+            HunkSection& sec = secs[static_cast<std::size_t>(cur)];
+            sec.bytes.insert(sec.bytes.end(), bytes.begin(), bytes.end());
+            pc += static_cast<Address>(bytes.size());
+            return;
+        }
         if (segments.empty() || segments.back().address + segments.back().bytes.size() != pc) {
             segments.push_back({pc, {}});
         }
@@ -189,6 +204,19 @@ struct Pass {
             pendingUndefined.clear();
             if (!eval(l.number, item, v, undef)) continue;
             if (undef) pendingUndefinedList.push_back({l.number, pendingUndefined});
+            if (hunkMode && !undef && sectionTag(v) != 0) {
+                if (!isSectionTag(sectionTag(v))) {
+                    error(l.number, "'" + item + "' mixes addresses of different SECTIONs");
+                    continue;
+                }
+                if (unit != 4) {
+                    error(l.number, "'" + item + "' is an address inside a SECTION: only DC.L can hold it (it is relocated by the loader)");
+                    continue;
+                }
+                relocChecks.push_back({l.number, tagSection(sectionTag(v))});
+                secs[static_cast<std::size_t>(cur)].relocs.push_back({pc + static_cast<Address>(out.size()), tagSection(sectionTag(v))});
+                v = sectionOffset(v);
+            }
             const std::int64_t lo = unit == 1 ? -128 : unit == 2 ? -32768 : -(std::int64_t{1} << 31);
             const std::int64_t hi = unit == 1 ? 255 : unit == 2 ? 65535 : 0xFFFFFFFFLL;
             if (!undef && (v < lo || v > hi)) error(l.number, "value out of range for " + l.mnemonic + "." + l.size);
@@ -197,21 +225,102 @@ struct Pass {
     }
     std::vector<Diagnostic> pendingUndefinedList;
 
+    // SECTION name[,CODE|DATA|BSS][_C|_F]   (also the shorthands CODE, DATA, BSS)
+    void section(const SourceLine& l) {
+        std::vector<std::string> ops = splitOperands(l.operands);
+        std::string name, type;
+        if (l.mnemonic == "SECTION") {
+            if (ops.empty() || ops[0].empty()) return error(l.number, "SECTION needs a name");
+            name = ops[0];
+            type = ops.size() > 1 ? upperCase(ops[1]) : "CODE";
+            if (ops.size() > 2) return error(l.number, "too many operands for SECTION");
+        } else {
+            type = l.mnemonic;
+            name = ops.empty() || ops[0].empty() ? lowerCase(type.substr(0, type.find('_'))) : ops[0];
+        }
+        if (name.size() >= 2 && name.front() == name.back() && (name.front() == '"' || name.front() == '\'')) name = name.substr(1, name.size() - 2);
+        HunkSection::Kind kind;
+        bool chip = false, fast = false;
+        std::string base = type;
+        if (const std::size_t us = type.find('_'); us != std::string::npos) {
+            base = type.substr(0, us);
+            const std::string mem = type.substr(us + 1);
+            if (mem == "C") chip = true;
+            else if (mem == "F") fast = true;
+            else if (mem != "P") return error(l.number, "unknown memory type '_" + mem + "' (use _C, _F or _P)");
+        }
+        if (base == "CODE") kind = HunkSection::Kind::Code;
+        else if (base == "DATA") kind = HunkSection::Kind::Data;
+        else if (base == "BSS") kind = HunkSection::Kind::Bss;
+        else return error(l.number, "unknown section type '" + type + "' (CODE, DATA or BSS, optionally with _C or _F)");
+        for (std::size_t i = 0; i < secs.size(); ++i) {
+            if (secs[i].name != name) continue;
+            if (secs[i].kind != kind) return error(l.number, "section '" + name + "' was declared with another type");
+            cur = static_cast<int>(i);
+            pc = secs[i].size();
+            return;
+        }
+        HunkSection s;
+        s.name = name;
+        s.kind = kind;
+        s.chip = chip;
+        s.fast = fast;
+        secs.push_back(std::move(s));
+        cur = static_cast<int>(secs.size()) - 1;
+        pc = 0;
+    }
+
+    static std::string upperCase(std::string t) {
+        for (char& c : t) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        return t;
+    }
+    static std::string lowerCase(std::string t) {
+        for (char& c : t) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return t;
+    }
+
     void run() {
         pc = options.origin;
+        if (hunkMode) pc = 0;
         for (std::size_t idx = 0; idx < lines.size(); ++idx) {
             const SourceLine& l = lines[idx];
-            const Address startPc = pc;
+            Address startPc = pc;
             std::vector<Byte> produced;
             bool stop = false;
+            const bool isSectionDirective =
+                l.hasStatement && hunkMode &&
+                (l.mnemonic == "SECTION" || l.mnemonic == "CODE" || l.mnemonic == "DATA" || l.mnemonic == "BSS" || l.mnemonic == "CODE_C" ||
+                 l.mnemonic == "DATA_C" || l.mnemonic == "BSS_C" || l.mnemonic == "CODE_F" || l.mnemonic == "DATA_F" || l.mnemonic == "BSS_F");
+            if (isSectionDirective) {
+                section(l);
+                if (!l.label.empty()) error(l.number, "a label on a SECTION line is not supported");
+                listing.push_back({l.number, cur, pc, {}, l.text});
+                continue;
+            }
+            const bool needsSection = hunkMode && cur < 0 && l.hasStatement && l.mnemonic != "EQU" && l.mnemonic != "XDEF" && l.mnemonic != "END";
+            if (needsSection || (hunkMode && cur < 0 && !l.label.empty() && !(l.hasStatement && l.mnemonic == "EQU"))) {
+                error(l.number, "code, data or a label before the first SECTION");
+                continue;
+            }
+            const bool inBss = hunkMode && cur >= 0 && secs[static_cast<std::size_t>(cur)].kind == HunkSection::Kind::Bss;
 
             if (!l.label.empty() && !(l.hasStatement && (l.mnemonic == "EQU"))) {
                 if (!(l.label[0] == '.')) lastGlobal = l.label;
-                define(l.number, l.label, pc);
+                define(l.number, l.label, here());
             }
             if (l.hasStatement) {
                 const std::string& m = l.mnemonic;
-                if (m == "EQU") {
+                if (m == "XDEF") {
+                    if (!hunkMode) {
+                        error(l.number, "XDEF only makes sense in a program with SECTIONs");
+                    } else {
+                        for (const std::string& n : splitOperands(l.operands)) xdefs.push_back(n);
+                    }
+                } else if (m == "XREF") {
+                    error(l.number, "XREF (external references) needs a linker; this assembler produces finished programs");
+                } else if (inBss && m != "DS" && m != "EQU" && m != "EVEN" && m != "END") {
+                    error(l.number, "a BSS section can only contain DS (and labels); use a DATA section for initialised data");
+                } else if (m == "EQU") {
                     if (l.label.empty()) {
                         error(l.number, "EQU needs a label");
                     } else {
@@ -227,6 +336,8 @@ struct Pass {
                             }
                         }
                     }
+                } else if (m == "ORG" && hunkMode) {
+                    error(l.number, "ORG cannot be used in a program with SECTIONs (the loader decides the address)");
                 } else if (m == "ORG") {
                     std::int64_t v = 0;
                     bool undef = false;
@@ -237,7 +348,14 @@ struct Pass {
                         else pc = static_cast<Address>(v);
                     }
                 } else if (m == "EVEN") {
-                    if (pc & 1U) produced.push_back(0);
+                    if (pc & 1U) {
+                        if (inBss) {
+                            ++secs[static_cast<std::size_t>(cur)].bssSize;
+                            ++pc;
+                        } else {
+                            produced.push_back(0);
+                        }
+                    }
                 } else if (m == "END") {
                     stop = true;
                 } else if (m == "DC") {
@@ -252,7 +370,11 @@ struct Pass {
                     } else if (eval(l.number, l.operands, n, undef)) {
                         if (undef) error(l.number, "DS needs a defined count");
                         else if (n < 0 || n > 0x1000000) error(l.number, "bad DS count");
-                        else produced.assign(static_cast<std::size_t>(n) * (l.size == 'L' ? 4 : l.size == 'W' ? 2 : 1), 0);
+                        else if (inBss) {
+                            const Address bytes = static_cast<Address>(n) * (l.size == 'L' ? 4 : l.size == 'W' ? 2 : 1);
+                            secs[static_cast<std::size_t>(cur)].bssSize += bytes;
+                            pc += bytes;
+                        } else produced.assign(static_cast<std::size_t>(n) * (l.size == 'L' ? 4 : l.size == 'W' ? 2 : 1), 0);
                     }
                 } else if (isMnemonic(m)) {
                     if (pc & 1U) error(l.number, "instruction at odd address");
@@ -261,11 +383,12 @@ struct Pass {
                     rq.size = l.size;
                     rq.operands = splitOperands(l.operands);
                     rq.pc = pc;
+                    rq.section = hunkMode ? tagOfSection(static_cast<unsigned>(cur)) : 0;
                     rq.hint = hints[idx];
                     std::string undefinedName;
                     const EncodeResult r = encodeInstruction(rq, [&](const std::string& e) {
                         EncodeValue v;
-                        const ExpressionEvaluator ev([this](const std::string& n, std::int64_t& val) { return lookup(n, val); }, pc);
+                        const ExpressionEvaluator ev([this](const std::string& n, std::int64_t& val) { return lookup(n, val); }, here());
                         const ExprResult x = ev.evaluate(e);
                         if (!x.ok) {
                             v.error = x.error;
@@ -285,6 +408,10 @@ struct Pass {
                             hintsChanged = true;
                         }
                         produced = r.bytes;
+                        for (const Relocation& rel : r.relocs) {
+                            relocChecks.push_back({l.number, rel.section});
+                            secs[static_cast<std::size_t>(cur)].relocs.push_back({pc + rel.offset, rel.section});
+                        }
                     }
                 } else {
                     error(l.number, "unknown instruction or directive '" + l.mnemonic + "'");
@@ -292,12 +419,14 @@ struct Pass {
             }
             if (!produced.empty()) emit(produced);
             if (l.hasStatement || !l.label.empty()) {
-                listing.push_back({l.number, startPc, produced, l.text});
+                listing.push_back({l.number, hunkMode ? cur : -1, startPc, produced, l.text});
             } else if (!trim(l.text).empty()) {
-                listing.push_back({l.number, pc, {}, l.text});
+                listing.push_back({l.number, hunkMode ? cur : -1, pc, {}, l.text});
             }
             if (stop) break;
         }
+        for (const auto& [line, target] : relocChecks)
+            if (target >= secs.size()) error(line, "address arithmetic mixes sections in an unsupported way");
     }
 };
 
@@ -332,7 +461,8 @@ std::string AssemblyResult::formatListing() const {
         }
         if (l.bytes.size() > 8) bytes += "..";
         char buf[64];
-        std::snprintf(buf, sizeof buf, "%5d  %06X  %-21s ", l.line, l.address & kAddressMask, bytes.c_str());
+        if (l.section >= 0) std::snprintf(buf, sizeof buf, "%5d  S%d:%06X  %-21s ", l.line, l.section, l.address & kAddressMask, bytes.c_str());
+        else std::snprintf(buf, sizeof buf, "%5d  %06X  %-21s ", l.line, l.address & kAddressMask, bytes.c_str());
         out << buf << l.source << '\n';
     }
     return out.str();
@@ -344,7 +474,12 @@ std::string AssemblyResult::formatSymbols() const {
     std::sort(v.begin(), v.end());
     std::ostringstream out;
     for (const auto& [value, name] : v) {
-        out << name << " = " << formatHex(static_cast<unsigned>(value), 8, NumberStyle::Dollar) << '\n';
+        out << name << " = " << formatHex(static_cast<unsigned>(value), 8, NumberStyle::Dollar);
+        if (hunk) {
+            const auto it = symbolSection.find(name);
+            if (it != symbolSection.end() && it->second >= 0) out << "   ; section " << it->second << " (" << sections[static_cast<std::size_t>(it->second)].name << ")";
+        }
+        out << '\n';
     }
     return out.str();
 }
@@ -364,16 +499,51 @@ AssemblyResult assemble(const std::string& source, const AssemblerOptions& optio
     std::vector<int> hints(lines.size(), 0);
     std::map<std::string, std::int64_t> previous;
     AssemblyResult result;
+    // A program with a SECTION directive is assembled relocatably.
+    bool hunkMode = false;
+    for (const SourceLine& l : lines)
+        if (l.hasStatement && l.mnemonic == "SECTION") hunkMode = true;
+    result.hunk = hunkMode;
 
     for (int passNo = 0; passNo < kMaxPasses; ++passNo) {
-        Pass pass(lines, options, previous, hints);
+        Pass pass(lines, options, previous, hints, hunkMode);
         pass.run();
         const bool stable = !pass.hintsChanged && pass.symbols == previous;
         if (stable || passNo == kMaxPasses - 1) {
             result.segments = std::move(pass.segments);
             result.errors = std::move(pass.errors);
-            result.symbols = std::move(pass.symbols);
             result.listing = std::move(pass.listing);
+            if (hunkMode) {
+                // symbols: offsets inside their sections
+                std::set<std::string> exported(pass.xdefs.begin(), pass.xdefs.end());
+                for (const auto& [name, value] : pass.symbols) {
+                    const int tag = sectionTag(value);
+                    if (isSectionTag(tag) && tagSection(tag) < pass.secs.size()) {
+                        result.symbols[name] = sectionOffset(value);
+                        result.symbolSection[name] = static_cast<int>(tagSection(tag));
+                    } else {
+                        result.symbols[name] = value;
+                        result.symbolSection[name] = -1;
+                    }
+                }
+                for (const std::string& n : pass.xdefs) {
+                    if (!pass.symbols.count(n)) result.errors.push_back({0, "XDEF symbol '" + n + "' is not defined"});
+                    else if (result.symbolSection[n] < 0) result.errors.push_back({0, "XDEF symbol '" + n + "' is a plain number, not an address"});
+                }
+                for (const auto& [name, value] : result.symbols) {
+                    const int sec = result.symbolSection[name];
+                    if (sec < 0 || name.find('.') != std::string::npos) continue;  // numbers and local labels
+                    if (options.exportAllSymbols || exported.count(name))
+                        pass.secs[static_cast<std::size_t>(sec)].symbols.emplace_back(name, static_cast<Address>(value));
+                }
+                for (HunkSection& sec : pass.secs) {
+                    std::sort(sec.relocs.begin(), sec.relocs.end(), [](const HunkReloc& a, const HunkReloc& b) { return a.offset < b.offset; });
+                    std::sort(sec.symbols.begin(), sec.symbols.end(), [](const auto& a, const auto& b) { return a.second != b.second ? a.second < b.second : a.first < b.first; });
+                }
+                result.sections = std::move(pass.secs);
+            } else {
+                result.symbols = std::move(pass.symbols);
+            }
             // Forward references that stayed undefined are errors only in the final pass.
             for (const Diagnostic& d : pass.pendingUndefinedList)
                 result.errors.push_back({d.line, "undefined symbol '" + d.message + "'"});

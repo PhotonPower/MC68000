@@ -59,6 +59,8 @@ void printUsage(std::ostream& out) {
         << "  -l <file|->      write a listing ('-' = standard output)\n"
         << "  -s <file|->      write the symbol table\n"
         << "  --org <addr>     start address before the first ORG (default 0)\n"
+        << "  --hunk <file>    write an AmigaDOS load file (programs with SECTION directives; default <source>.hunk)\n"
+        << "  --hunk-symbols   put every label into the hunk symbol table (not only XDEF ones)\n"
         << "  (without -o/--srec the result is written to <source>.bin)\n"
         << "\n"
         << "dis options:\n"
@@ -112,11 +114,13 @@ void writeOut(const std::string& target, const std::string& text) {
 }
 
 int cmdAsm(Args args) {
-    std::string source, outBin, outSrec, outList, outSyms;
+    std::string source, outBin, outSrec, outList, outSyms, outHunk;
     m68k::AssemblerOptions opt;
     while (!args.done()) {
         const std::string a = args.next();
         if (a == "-o") outBin = args.value(a);
+        else if (a == "--hunk") outHunk = args.value(a);
+        else if (a == "--hunk-symbols") opt.exportAllSymbols = true;
         else if (a == "--srec") outSrec = args.value(a);
         else if (a == "-l") outList = args.value(a);
         else if (a == "-s") outSyms = args.value(a);
@@ -135,6 +139,24 @@ int cmdAsm(Args args) {
     if (!outSyms.empty()) writeOut(outSyms, result.formatSymbols());
     if (!result.ok()) {
         std::cerr << source << ": " << result.errors.size() << " error(s), no output written\n";
+        return kExitFailed;
+    }
+    if (result.hunk) {
+        if (!outBin.empty() || !outSrec.empty()) {
+            std::cerr << source << ": a program with SECTIONs is relocatable: write it with --hunk (not -o / --srec)\n";
+            return kExitFailed;
+        }
+        if (outHunk.empty()) outHunk = source + ".hunk";
+        const std::vector<m68k::Byte> file = m68k::writeHunkFile(result.sections, true);
+        m68k::writeBinaryFile(outHunk, file);
+        std::size_t bytes = 0, relocs = 0;
+        for (const m68k::HunkSection& sec : result.sections) bytes += sec.size(), relocs += sec.relocs.size();
+        std::cerr << source << ": " << result.sections.size() << " section(s), " << bytes << " bytes, " << relocs << " relocation(s), "
+                  << file.size() << " bytes written to " << outHunk << ", 0 error(s)\n";
+        return kExitOk;
+    }
+    if (!outHunk.empty() || opt.exportAllSymbols) {
+        std::cerr << source << ": --hunk / --hunk-symbols need a program with SECTION directives\n";
         return kExitFailed;
     }
     if (outBin.empty() && outSrec.empty()) outBin = source + ".bin";

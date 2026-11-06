@@ -76,7 +76,6 @@ kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen geteste
 
 - Erprobung des Orchestrators mit einem echten Modell und Feinschliff von Prompt und Parametern
 - weitere `exec`-/`dos`-Funktionen in der OS-Emulation
-- Amiga-Hunk-*Ausgabe* des Assemblers
 
 ## Schnellstart
 

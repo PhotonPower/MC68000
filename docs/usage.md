@@ -23,8 +23,11 @@ Adressen und Zahlen dürfen in allen Schreibweisen des Assemblers angegeben werd
 | `-l <Datei\|->`   | Listing schreiben (`-` = Standardausgabe)                                      |
 | `-s <Datei\|->`   | Symboltabelle schreiben                                                        |
 | `--org <Adresse>` | Startadresse vor dem ersten `ORG` (Standard `0`)                               |
+| `--hunk <Datei>`  | Programme mit `SECTION`-Zeilen: AmigaDOS-Ladedatei schreiben (Standard `<quelle>.hunk`)  |
+| `--hunk-symbols`  | alle Labels in die Hunk-Symboltabelle eintragen (sonst nur `XDEF`)             |
 
-Ohne `-o` und `--srec` entsteht `<quelle>.bin`. Bei Fehlern im Quelltext werden **keine** Binär- oder
+Ohne `-o` und `--srec` entsteht `<quelle>.bin`; ein Quelltext mit `SECTION` ist relokatierbar und wird nur als Hunk-Datei geschrieben (`-o`/`--srec` sind dann ein Fehler,
+siehe [assembler-syntax.md](assembler-syntax.md#sektionen-und-hunk-ausgabe-section)); `m68ktool dis programm.hunk` liest sie wieder. Bei Fehlern im Quelltext werden **keine** Binär- oder
 S-Record-Dateien geschrieben (Listing und Symboltabelle schon, das hilft bei der Fehlersuche). Alle
 Fehler eines Laufs erscheinen auf `stderr`:
 

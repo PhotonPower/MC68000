@@ -38,6 +38,11 @@ struct HunkImage {
 /// relocation kinds) and every malformed length throws IoError.
 [[nodiscard]] HunkImage loadHunkFile(const std::vector<Byte>& bytes, Address base);
 
+/// Writes the sections of a SECTION program as an AmigaDOS load file: HUNK_HEADER, then per section HUNK_CODE / HUNK_DATA / HUNK_BSS,
+/// HUNK_RELOC32 (grouped by target hunk), HUNK_SYMBOL (the exported labels, if `symbols`) and HUNK_END. Chip / fast memory
+/// requirements go into the memory flags (bits 30 / 31) of the sizes in the header. Throws IoError if there are no sections.
+[[nodiscard]] std::vector<Byte> writeHunkFile(const std::vector<HunkSection>& sections, bool symbols = true);
+
 /// A symbol name that the assembler accepts as a label: other characters become '_', a leading
 /// digit or a register-like name gets a '_' prefix.
 [[nodiscard]] std::string asmSymbolName(const std::string& name);

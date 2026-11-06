@@ -88,6 +88,34 @@ Aliase: `DBF` = `DBRA`, `BHS` = `BCC`, `BLO` = `BCS`, `SHS`/`SLO`, `DBHS`/`DBLO`
 
 Befehle müssen an geraden Adressen liegen (sonst Fehler); `DC.W`/`DC.L` dürfen an ungeraden Adressen stehen.
 
+## Sektionen und Hunk-Ausgabe (`SECTION`)
+
+Ein Quelltext mit mindestens einer `SECTION`-Zeile wird **relokatierbar** übersetzt und als AmigaDOS-Programm (Hunk-Datei, `m68ktool asm --hunk`) geschrieben;
+der Lader legt die Hunks irgendwo ab und trägt die Adressen ein ([formats.md](formats.md#amiga-hunk-ausgabe)). Ohne `SECTION` ändert sich nichts.
+
+| Befehl | Wirkung |
+|---|---|
+| `SECTION name[,typ]` | Sektion beginnen oder fortsetzen; `typ` = `CODE` (Standard), `DATA` oder `BSS`, mit Zusatz `_C` (Chip-RAM), `_F` (Fast-RAM) oder `_P` (egal), z. B. `SECTION gfx,DATA_C` |
+| `CODE [name]`, `DATA [name]`, `BSS [name]` | Kurzformen (auch `CODE_C`, `DATA_F`, …); ohne Namen heißt die Sektion `code`, `data` bzw. `bss` |
+| `XDEF a,b` | Labels in die Hunk-Symboltabelle (`HUNK_SYMBOL`) eintragen; `--hunk-symbols` trägt alle Labels ein |
+
+Jede Sektion ergibt einen Hunk; gleicher Name = dieselbe Sektion (fortsetzen), die Reihenfolge des ersten Auftretens bestimmt die Hunk-Nummer. Ein Label ist **„Offset in
+Sektion n“**, keine Zahl. Daraus folgen die Regeln:
+
+- Eine **Adresse einer Sektion** darf nur dort stehen, wo der Lader sie eintragen kann: in einer **langen absoluten Adresse** (`MOVE.L label,D0`, `LEA label,A0`, `JSR label`;
+  sie wird zwangsläufig `.L`), in einem **langen Direktwert** (`MOVE.L #label,D0`) und in **`DC.L label`**. Jede solche Stelle wird ein `RELOC32`-Eintrag.
+  `label+4` und `#label-4` bleiben Adressen derselben Sektion.
+- **PC-relative** Adressierung und Sprünge (`LEA label(PC),A0`, `BRA label`, `DBRA D0,label`) gehen nur **innerhalb einer Sektion**; das Ziel in einer anderen Sektion ist ein Fehler
+  (die Entfernung ist erst beim Laden bekannt).
+- Die **Differenz zweier Labels derselben Sektion** (`end-start`) ist eine gewöhnliche Zahl und überall erlaubt. Die Differenz oder Summe von Labels **verschiedener** Sektionen
+  wird abgelehnt („mixes addresses of different SECTIONs“).
+- Adressen in `.B`/`.W`-Feldern (`MOVE.W #label,D0`, `label.W`, `DC.W label`, `label(A0)`) sind Fehler.
+- **BSS** enthält nur `DS` (und Labels, `EVEN`); initialisierte Daten gehören in `DATA`.
+- `ORG` und `XREF` gibt es in Sektionsprogrammen nicht (der Lader bestimmt die Adresse; ohne Linker keine externen Verweise). Vor der ersten `SECTION` dürfen nur `EQU`, `XDEF` und
+  Kommentare stehen. Auf einer `SECTION`-Zeile ist kein Label erlaubt.
+- Das Listing zeigt `S<nr>:<offset>`, die Symboltabelle zu jedem Label die Sektion. `-o` und `--srec` sind für Sektionsprogramme nicht möglich (nur `--hunk`);
+  `m68ktool serve` und der Monitor übersetzen sie nicht direkt – erst mit `asm --hunk` in eine Datei, dann laden.
+
 ## Ausgabe und Fehler
 
 Raw-Binary (von der niedrigsten Adresse, Lücken mit `00`), Motorola S-Record, Listing, Symboltabelle
@@ -97,5 +125,5 @@ der Assembler den aussagekräftigsten Fehler (z. B. „quick value must be 1..8�
 
 ## Nicht unterstützt
 
-Makros, bedingte Assemblierung, `INCLUDE`, `SECTION`/`XDEF`/Hunk-Ausgabe, `DCB`, `REG`, Befehle des
-MC68010 und höher, Zeichenketten mit `DC.W`/`DC.L`.
+Makros, bedingte Assemblierung, `INCLUDE`, `XREF`/Objektdateien (`HUNK_UNIT`) und Linker, `DCB`, `REG`, Befehle des
+MC68010 und höher, Zeichenketten mit `DC.W`/`DC.L`, Symbole mit Typ in Hunk-Dateien außer `XDEF`.

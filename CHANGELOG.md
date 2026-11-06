@@ -7,6 +7,10 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Hunk-Ausgabe des Assemblers:** `SECTION name[,CODE|DATA|BSS][_C|_F]` (Kurzformen `CODE`/`DATA`/`BSS`), `XDEF`, Relokationen für lange absolute Adressen,
+  lange Direktwerte und `DC.L` (`HUNK_RELOC32`), `m68ktool asm --hunk [--hunk-symbols]`, `m68k::writeHunkFile`. Labels sind „Offset in Sektion“;
+  PC-relative Verweise zwischen Sektionen und Differenzen/Summen von Adressen verschiedener Sektionen werden abgelehnt. Absolute Programme sind unverändert.
+  Tests `hunk_write` (2108 Prüfungen, darunter 400 Zufallsprogramme: Hunk geladen = absolut übersetzt), Beispiel `examples/sections.s`.
 - **Emulierte Amiga-Bibliotheksaufrufe** (`m68k::AmigaOs`, `machine … os:true`): ExecBase bei Adresse 4, Bibliotheksbasen mit echter
   `JMP`-Sprungtabelle, deren Ziele der Emulator abfängt (`Cpu::executeHook`); nachgebildet sind `AllocMem`/`FreeMem`/`AllocVec`/`FreeVec`,
   `OpenLibrary`/`CloseLibrary`, `FindTask`, `Forbid`/`Permit`/`Disable`/`Enable` sowie dos `Output`/`Input`/`Write`/`Read`/`Close`/`Open`/

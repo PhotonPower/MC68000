@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "m68k/section.hpp"
 #include "m68k/types.hpp"
 
 namespace m68k {
@@ -12,6 +13,7 @@ namespace m68k {
 struct AssemblerOptions {
     Address origin = 0;                                  ///< start address before the first ORG
     std::map<std::string, std::int64_t> predefined;      ///< symbols defined before assembly
+    bool exportAllSymbols = false;                       ///< SECTION programs: put every label into the hunk symbol table (not only XDEF ones)
 };
 
 struct Diagnostic {
@@ -25,9 +27,31 @@ struct Segment {
     std::vector<Byte> bytes;
 };
 
+/// A longword inside a hunk that the loader must adjust by the base address of another hunk.
+struct HunkReloc {
+    Address offset = 0;   ///< offset inside this section
+    unsigned target = 0;  ///< 0-based index of the section whose base is added
+};
+
+/// One section of a SECTION program (it becomes one hunk).
+struct HunkSection {
+    enum class Kind { Code, Data, Bss };
+    std::string name;
+    Kind kind = Kind::Code;
+    bool chip = false;   ///< `_C`: must be loaded into chip RAM
+    bool fast = false;   ///< `_F`: fast RAM preferred
+    std::vector<Byte> bytes;          ///< contents (empty for BSS)
+    Address bssSize = 0;              ///< size of a BSS section in bytes
+    std::vector<HunkReloc> relocs;
+    std::vector<std::pair<std::string, Address>> symbols;  ///< exported labels (XDEF, or all with exportAllSymbols)
+
+    [[nodiscard]] Address size() const { return kind == Kind::Bss ? bssSize : static_cast<Address>(bytes.size()); }
+};
+
 struct ListingLine {
     int line = 0;
-    Address address = 0;
+    int section = -1;   ///< SECTION programs: index of the section, else -1
+    Address address = 0;  ///< address; offset inside the section for SECTION programs
     std::vector<Byte> bytes;
     std::string source;
 };
@@ -37,6 +61,11 @@ struct AssemblyResult {
     std::vector<Diagnostic> errors;
     std::map<std::string, std::int64_t> symbols;
     std::vector<ListingLine> listing;
+    /// SECTION programs ("relocatable"): the sections in order of first appearance. `segments` is then empty, `symbols`
+    /// holds offsets inside the section named in `symbolSection` (-1 = plain number, e.g. EQU).
+    bool hunk = false;
+    std::vector<HunkSection> sections;
+    std::map<std::string, int> symbolSection;
 
     [[nodiscard]] bool ok() const { return errors.empty(); }
 

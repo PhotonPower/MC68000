@@ -226,6 +226,8 @@ Json Session::Impl::cmdAsm() {
     opt.origin = address("origin", 0x1000);
     opt.predefined = s.symbols_;
     const AssemblyResult r = assemble(source, opt);
+    if (r.ok() && r.hunk)
+        throw SessionError("a program with SECTIONs is relocatable: assemble it to a hunk file with 'm68ktool asm --hunk' and load it with load_file");
     if (!r.ok()) {
         std::vector<std::string> lines;
         std::istringstream in(source);

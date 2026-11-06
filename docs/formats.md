@@ -50,10 +50,23 @@ von Anzahl bis Daten).
   werden zu `_`, Namen wie `D0` bekommen ein `_` vorn, doppelte Namen eine Adresssuffix)
 - alles andere (Overlays, Bibliotheken, andere Relokationsarten, falsche Längen, abgeschnittene Dateien) wird mit
   Fehlermeldung abgelehnt, nie außerhalb der Datei gelesen
-- **nicht umgesetzt:** Hunk-*Ausgabe* des Assemblers (`SECTION`, `XDEF`, Relokationen)
 
 Die Hunk-Verarbeitung ist mit synthetischen Dateien getestet (`tests/test_hunk.cpp`); ein echtes Amiga-Programm
 war dafür nicht verfügbar.
+
+## Amiga-Hunk (Ausgabe)
+
+`m68ktool asm quelle.s --hunk programm [--hunk-symbols]` schreibt ein Programm mit `SECTION`-Zeilen ([assembler-syntax.md](assembler-syntax.md#sektionen-und-hunk-ausgabe-section))
+als AmigaDOS-Ladedatei (`m68k::writeHunkFile`):
+
+- `HUNK_HEADER` (keine residenten Bibliotheken, Hunk-Tabelle `0 … n-1`); die Größen in Langwörtern tragen die **Speicherart** in Bit 30 (`_C`, Chip) bzw. 31 (`_F`, Fast)
+- je Sektion `HUNK_CODE`, `HUNK_DATA` oder `HUNK_BSS` (Länge in Langwörtern, Inhalt auf 4 Byte aufgefüllt), dann `HUNK_RELOC32` – **nach Ziel-Hunk gruppiert**, Offsets aufsteigend –,
+  wenn die Sektion Relokationen hat, `HUNK_SYMBOL` mit den `XDEF`-Labels (bzw. allen mit `--hunk-symbols`), `HUNK_END`
+- keine `HUNK_NAME`/`HUNK_DEBUG`-Blöcke, keine Overlays, keine Objektdateien (`HUNK_UNIT`), keine Bibliotheken
+
+Die Ausgabe ist **nicht an einem echten Amiga erprobt**. Gegengeprüft wird sie auf drei Wegen: byteweise gegen den Aufbau aus der Hunk-Beschreibung (Hand-Erwartung), im Rundlauf durch
+den eigenen Lader und den Emulator (das Programm rechnet mit den relokierten Zeigern) und mit 400 **Zufallsprogrammen**, die einmal als Hunk (geladen an `$20000`) und einmal absolut
+mit denselben Adressen assembliert werden – die Speicherabbilder müssen übereinstimmen (`tests/test_hunk_write.cpp`).
 
 ## Systemabbilder
 

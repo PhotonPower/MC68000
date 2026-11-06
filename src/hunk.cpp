@@ -186,4 +186,62 @@ std::string asmSymbolName(const std::string& name) {
     return s;
 }
 
+std::vector<Byte> writeHunkFile(const std::vector<HunkSection>& sections, bool symbols) {
+    if (sections.empty()) throw IoError("hunk file: the program has no sections");
+    std::vector<Byte> out;
+    auto u32 = [&out](std::uint32_t v) {
+        for (int i = 3; i >= 0; --i) out.push_back(static_cast<Byte>(v >> (8 * i)));
+    };
+    auto longs = [](Address bytes) { return (bytes + 3U) / 4U; };
+    auto text = [&](const std::string& t) {  // length in longs, then the characters padded with zeros
+        const std::uint32_t n = static_cast<std::uint32_t>((t.size() + 3U) / 4U);
+        u32(n);
+        for (std::size_t i = 0; i < std::size_t{n} * 4; ++i) out.push_back(i < t.size() ? static_cast<Byte>(t[i]) : Byte{0});
+    };
+
+    u32(kHunkHeader);
+    u32(0);  // no resident library names
+    u32(static_cast<std::uint32_t>(sections.size()));
+    u32(0);
+    u32(static_cast<std::uint32_t>(sections.size() - 1));
+    for (const HunkSection& sec : sections) {
+        std::uint32_t size = longs(sec.size());
+        if (size >= 0x40000000U) throw IoError("hunk file: section '" + sec.name + "' is too large");
+        if (sec.chip) size |= 0x40000000U;
+        else if (sec.fast) size |= 0x80000000U;
+        u32(size);
+    }
+    for (const HunkSection& sec : sections) {
+        const std::uint32_t id = sec.kind == HunkSection::Kind::Code ? kHunkCode : sec.kind == HunkSection::Kind::Data ? kHunkData : kHunkBss;
+        u32(id);  // the memory type is carried by the sizes in the header; the block id stays plain
+        u32(longs(sec.size()));
+        if (sec.kind != HunkSection::Kind::Bss) {
+            out.insert(out.end(), sec.bytes.begin(), sec.bytes.end());
+            for (std::size_t i = sec.bytes.size(); i % 4 != 0; ++i) out.push_back(0);
+        }
+        if (!sec.relocs.empty()) {
+            u32(kHunkReloc32);
+            std::map<unsigned, std::vector<Address>> byTarget;
+            for (const HunkReloc& r : sec.relocs) byTarget[r.target].push_back(r.offset);
+            for (const auto& [target, offsets] : byTarget) {
+                if (target >= sections.size()) throw IoError("hunk file: a relocation refers to a missing section");
+                u32(static_cast<std::uint32_t>(offsets.size()));
+                u32(target);
+                for (const Address off : offsets) u32(off);
+            }
+            u32(0);
+        }
+        if (symbols && !sec.symbols.empty()) {
+            u32(kHunkSymbol);
+            for (const auto& [name, offset] : sec.symbols) {
+                text(name);
+                u32(offset);
+            }
+            u32(0);
+        }
+        u32(kHunkEnd);
+    }
+    return out;
+}
+
 }  // namespace m68k

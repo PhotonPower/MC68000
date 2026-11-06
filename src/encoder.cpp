@@ -5,6 +5,7 @@
 #include <map>
 
 #include "forms.hpp"
+#include "m68k/section.hpp"
 
 namespace m68k {
 
@@ -254,16 +255,52 @@ struct Ctx {
     const EncodeRequest& req;
     const ValueFn& val;
     std::vector<Word> ext;
+    std::vector<Relocation> relocs;
     int level = 0;
     std::string error;
 
-    Address extAddress() const { return req.pc + 2 + 2 * static_cast<Address>(ext.size()); }
+    // Addresses carry their section tag (see section.hpp), so that differences inside one section come out plain.
+    std::int64_t tagged(std::int64_t offset) const { return (static_cast<std::int64_t>(req.section) << kSectionShift) + offset; }
+    std::int64_t extAddress() const { return tagged(static_cast<std::int64_t>(req.pc) + 2 + 2 * static_cast<std::int64_t>(ext.size())); }
+    // Evaluates an expression whose value must be a plain number.
     bool eval(const std::string& e, EncodeValue& out) {
+        if (!evalRaw(e, out)) return false;
+        if (!out.undefined && sectionTag(out.value) != 0) {
+            error = "'" + e + "' is an address inside a SECTION; only a long absolute address or a long immediate can hold one (it is relocated by the loader)";
+            return false;
+        }
+        return true;
+    }
+    // ... or one that may be section-relative.
+    bool evalRaw(const std::string& e, EncodeValue& out) {
         out = val(e);
         if (!out.error.empty()) {
             error = out.error;
             return false;
         }
+        return true;
+    }
+    // The displacement from `base` to `target`; both must be in the same section.
+    bool displacement(const EncodeValue& target, std::int64_t base, std::int64_t& out) {
+        const std::int64_t raw = target.value - base;
+        if (!target.undefined && sectionTag(raw) != 0) {
+            error = "PC-relative addressing and branches only work inside one SECTION";
+            return false;
+        }
+        out = raw;
+        return true;
+    }
+    // Section-relative long field: remember the relocation, return the offset to store.
+    bool relocate(const EncodeValue& v, unsigned byteOffset, std::int64_t& stored) {
+        stored = v.value;
+        const int tag = v.undefined ? 0 : sectionTag(v.value);
+        if (tag == 0) return true;
+        if (!isSectionTag(tag)) {
+            error = "this expression mixes addresses of different SECTIONs (a difference or a sum of addresses from different sections cannot be relocated)";
+            return false;
+        }
+        relocs.push_back({byteOffset, tagSection(tag)});
+        stored = sectionOffset(v.value);
         return true;
     }
 };
@@ -319,9 +356,13 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
             return true;
         case K::D8AnXn:
         case K::D8PcXn: {
-            if (!c.eval(p.expr, v)) return false;
+            if (p.kind == K::D8PcXn ? !c.evalRaw(p.expr, v) : !c.eval(p.expr, v)) return false;
             std::int64_t d = v.value;
-            if (p.kind == K::D8PcXn) d = pcDisp(v.value, static_cast<std::int64_t>(c.extAddress()));
+            if (p.kind == K::D8PcXn) {
+                std::int64_t raw;
+                if (!c.displacement(v, c.extAddress(), raw)) return false;
+                d = pcDisp(v.value, c.extAddress());
+            }
             if (!v.undefined && !fitsSigned(d, 8)) {
                 c.error = "displacement out of 8 bit range";
                 return false;
@@ -338,8 +379,10 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
             return true;
         }
         case K::D16Pc: {
-            if (!c.eval(p.expr, v)) return false;
-            std::int64_t d = pcDisp(v.value, static_cast<std::int64_t>(c.extAddress()));
+            if (!c.evalRaw(p.expr, v)) return false;
+            std::int64_t raw;
+            if (!c.displacement(v, c.extAddress(), raw)) return false;
+            std::int64_t d = pcDisp(v.value, c.extAddress());
             if (v.undefined) d = 0;
             if (!v.undefined && !fitsSigned(d, 16)) {
                 c.error = "PC-relative displacement out of 16 bit range";
@@ -353,21 +396,28 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
         case K::AbsW:
         case K::AbsL:
         case K::AbsAuto: {
-            if (!c.eval(p.expr, v)) return false;
+            if (!c.evalRaw(p.expr, v)) return false;
+            const bool relocatable = !v.undefined && sectionTag(v.value) != 0;
             bool useLong = p.kind == K::AbsL;
             if (p.kind == K::AbsAuto) {
                 if (!(allowed & kAbsW)) useLong = true;
                 else if (!(allowed & kAbsL)) useLong = false;
-                else if (c.req.hint >= 1 || (!v.undefined && !fitsSigned(v.value, 16))) useLong = true;
+                else if (c.req.hint >= 1 || relocatable || (!v.undefined && !fitsSigned(v.value, 16))) useLong = true;
                 if (useLong) c.level = 1;
             }
+            if (relocatable && !useLong) {
+                c.error = "'" + p.expr + "' is an address inside a SECTION: it needs a long absolute address (.L) so that the loader can relocate it";
+                return false;
+            }
             if (useLong) {
-                if (!v.undefined && (v.value < -(std::int64_t{1} << 31) || v.value > 0xFFFFFFFFLL)) {
+                std::int64_t stored;
+                if (!c.relocate(v, static_cast<unsigned>(2 + 2 * c.ext.size()), stored)) return false;
+                if (!v.undefined && (stored < -(std::int64_t{1} << 31) || stored > 0xFFFFFFFFLL)) {
                     c.error = "address out of 32 bit range";
                     return false;
                 }
-                c.ext.push_back(static_cast<Word>((v.value >> 16) & 0xFFFF));
-                c.ext.push_back(static_cast<Word>(v.value & 0xFFFF));
+                c.ext.push_back(static_cast<Word>((stored >> 16) & 0xFFFF));
+                c.ext.push_back(static_cast<Word>(stored & 0xFFFF));
                 mode = 7;
                 reg = 1;
             } else {
@@ -382,8 +432,15 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
             return true;
         }
         case K::Imm: {
-            if (!c.eval(p.expr, v)) return false;
-            const std::int64_t x = v.value;
+            if (!c.evalRaw(p.expr, v)) return false;
+            std::int64_t x = v.value;
+            if (!v.undefined && sectionTag(v.value) != 0) {
+                if (size != Size::L) {
+                    c.error = "'" + p.expr + "' is an address inside a SECTION: only a long immediate (#...,.L) can hold it";
+                    return false;
+                }
+                if (!c.relocate(v, static_cast<unsigned>(2 + 2 * c.ext.size()), x)) return false;
+            }
             if (size == Size::B) {
                 if (!v.undefined && (x < -128 || x > 255)) {
                     c.error = "immediate out of byte range";
@@ -416,7 +473,7 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
 
 EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<Parsed>& ops, const ValueFn& val) {
     EncodeResult r;
-    Ctx c{req, val, {}, 0, {}};
+    Ctx c{req, val, {}, {}, 0, {}};
     auto fail = [&](const std::string& m) {
         r.ok = false;
         r.error = c.error.empty() ? m : c.error;
@@ -554,8 +611,10 @@ EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<
             case Op::Usp: if (p.kind != K::Usp) return fail("USP expected"); break;
             case Op::Branch: {
                 if (p.kind != K::AbsAuto) return fail("branch target expected");
-                if (!c.eval(p.expr, v)) return fail("bad target");
-                const std::int64_t disp = pcDisp(v.value, static_cast<std::int64_t>(req.pc + 2));
+                if (!c.evalRaw(p.expr, v)) return fail("bad target");
+                std::int64_t rawDiff;
+                if (!c.displacement(v, c.tagged(static_cast<std::int64_t>(req.pc) + 2), rawDiff)) return fail("bad target");
+                const std::int64_t disp = pcDisp(v.value, c.tagged(static_cast<std::int64_t>(req.pc) + 2));
                 bool shortForm;
                 if (us == 'S' || us == 'B') shortForm = true;
                 else if (us == 'W') shortForm = false;
@@ -573,8 +632,10 @@ EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<
             }
             case Op::DbDisp: {
                 if (p.kind != K::AbsAuto) return fail("branch target expected");
-                if (!c.eval(p.expr, v)) return fail("bad target");
-                const std::int64_t disp = pcDisp(v.value, static_cast<std::int64_t>(c.extAddress()));
+                if (!c.evalRaw(p.expr, v)) return fail("bad target");
+                std::int64_t rawDiff;
+                if (!c.displacement(v, c.extAddress(), rawDiff)) return fail("bad target");
+                const std::int64_t disp = pcDisp(v.value, c.extAddress());
                 if (!v.undefined) {
                     if (v.value & 1) return fail("branch target at odd address");
                     if (!fitsSigned(disp, 16)) return fail("branch target out of 16 bit range");
@@ -596,6 +657,7 @@ EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<
     }
 
     r.ok = true;
+    r.relocs = c.relocs;
     r.level = std::max(c.level, req.hint);
     r.bytes.push_back(static_cast<Byte>(op >> 8));
     r.bytes.push_back(static_cast<Byte>(op));

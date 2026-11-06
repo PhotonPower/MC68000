@@ -17,11 +17,19 @@ struct EncodeValue {
 };
 using ValueFn = std::function<EncodeValue(const std::string& expression)>;
 
+/// A 32 bit field of an instruction that holds an address inside another (or the same) SECTION and must be
+/// relocated by the loader.
+struct Relocation {
+    unsigned offset = 0;  ///< byte offset of the long inside the instruction
+    unsigned section = 0; ///< 0-based index of the target section
+};
+
 struct EncodeRequest {
     std::string mnemonic;               ///< without size suffix, any case: "move", "BRA"
     char size = 0;                      ///< 0 (none), 'B', 'W', 'L' or 'S' (short branch)
     std::vector<std::string> operands;  ///< operand texts in Motorola syntax
-    Address pc = 0;                     ///< address of the instruction
+    Address pc = 0;                     ///< address of the instruction (offset inside its section for SECTION programs)
+    int section = 0;                    ///< 0 = absolute program; else the tag of the instruction's section (tagOfSection(), see section.hpp)
     /// Sizing level remembered from earlier passes (0 = smallest encoding). Unsized branches and
     /// absolute addresses only ever grow: level 1 means the larger form.
     int hint = 0;
@@ -31,6 +39,7 @@ struct EncodeResult {
     bool ok = false;
     std::string error;
     std::vector<Byte> bytes;
+    std::vector<Relocation> relocs;  ///< long fields that hold section-relative addresses
     int level = 0;  ///< sizing level used; feed it back as `hint` in the next pass
 };
 
