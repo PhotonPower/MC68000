@@ -7,6 +7,8 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Amiga-Hunk-Lader** (`m68k/hunk.hpp`): `HUNK_HEADER/CODE/DATA/BSS/RELOC32/SYMBOL/DEBUG/NAME/END`, Relokation, Symbole als
+  Labels; `m68ktool dis` erkennt Hunk-Dateien. Getestet mit synthetischen Dateien, inklusive aller Abkürzungen.
 - **Meilenstein 0.2:** Dekoder (`decode()`), Encoder, Mehrpass-Assembler, Ausdrucksauswerter, Disassembler mit
   Ablaufanalyse, S-Record-Ein-/Ausgabe; `m68ktool asm` und `m68ktool dis`. Dekoder und Encoder teilen sich eine
   Befehlstabelle (164 Formen).
