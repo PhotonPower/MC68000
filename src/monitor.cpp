@@ -222,6 +222,7 @@ struct Monitor::Impl {
             case StopReason::Returned: o << "returned"; break;
             case StopReason::Stopped: o << "STOP instruction (waiting for an interrupt)"; break;
             case StopReason::Halted: o << "halted (double fault)"; break;
+            case StopReason::Requested: o << m.cpu_->stopMessage(); break;
             case StopReason::Limit: o << "instruction limit (" << m.limit_ << ")"; break;
             case StopReason::None: o << "stepped"; break;
         }
@@ -249,6 +250,10 @@ struct Monitor::Impl {
         st.regs = r;
         m.cpu_->setState(st);
         if (m.amiga_) m.amiga_->reset(*m.cpu_);
+        if (m.os_) {
+            m.os_->reset();
+            regs().a[7] = m.os_->stackTop();
+        }
     }
     void wake() {
         CpuState st = m.cpu_->state();
@@ -334,8 +339,10 @@ std::string Monitor::Impl::help() {
         "  asm file [org]         assemble a source file into memory           l file [adr]   load raw / S-record / hunk\n"
         "  sv file from to        save memory (inclusive)                      ck name / rb name   checkpoint / roll back\n"
         "  savestate file / loadstate file    snapshot files                   int level [vector]   interrupt\n"
-        "  machine [generic|amiga500 [chip_kb]]   memory map                   rom file   Kickstart ROM (amiga500)\n"
+        "  machine [generic|amiga500 [chipkb] [os]]   memory map (os: emulated exec/dos calls)   rom file   Kickstart ROM (amiga500)\n"
         "  io                     writes to custom/CIA registers (amiga500)    reset [mem]   reset the CPU (and memory)\n"
+        "  libcalls / console     library calls and text printed through dos Write (machine amiga500 [chipkb] os)\n"
+        "  prog adr               start a program like AmigaDOS (PC, D0=A0=0, return address on the stack; needs os)\n"
         "  ?  help      q  quit\n";
 }
 
@@ -425,11 +432,17 @@ std::string Monitor::Impl::run(const std::vector<std::string>& a) {
         if (a.size() < 2) throw MonitorError("usage: " + cmd + " name");
         if (cmd == "ck") {
             m.checkpoints_[a[1]] = capture(c);
+            m.amigaCheckpoints_.erase(a[1]);
+            m.osCheckpoints_.erase(a[1]);
+            if (m.amiga_) m.amigaCheckpoints_.emplace(a[1], m.amiga_->state());
+            if (m.os_) m.osCheckpoints_.emplace(a[1], m.os_->state());
             return "ok\n";
         }
         const auto it = m.checkpoints_.find(a[1]);
         if (it == m.checkpoints_.end()) throw MonitorError("no checkpoint named '" + a[1] + "'");
         restore(c, it->second);
+        if (m.amiga_ && m.amigaCheckpoints_.count(a[1])) m.amiga_->setState(m.amigaCheckpoints_.at(a[1]));
+        if (m.os_ && m.osCheckpoints_.count(a[1])) m.os_->setState(m.osCheckpoints_.at(a[1]));
         return "ok\n" + regsText();
     }
     if (cmd == "int") {
@@ -451,6 +464,31 @@ std::string Monitor::Impl::run(const std::vector<std::string>& a) {
         }
         m.amiga_->clearLog();
         return out.empty() ? "no writes\n" : out;
+    }
+    if (cmd == "prog") {
+        if (!m.os_) throw MonitorError("prog needs the emulated OS (machine amiga500 [chipkb] os)");
+        if (a.size() < 2) throw MonitorError("usage: prog address");
+        regs().pc = address(a[1]);
+        m.os_->prepareProgram(cpu());
+        wake();
+        return "ok: PC=" + h6(regs().pc) + " (a return to the system ends the run)\n";
+    }
+    if (cmd == "libcalls") {
+        if (!m.os_) return "no emulated OS (use: machine amiga500 chipkb os)\n";
+        std::string out;
+        for (const LibCall& lc : m.os_->log()) {
+            out += "  " + lc.library + " " + std::to_string(lc.offset) + (lc.function.empty() ? "" : " " + lc.function) +
+                   (lc.emulated ? "" : "  (NOT emulated: returned 0)") + "  D0=" + h8(lc.d0) + " D1=" + h8(lc.d1) + " A0=" + h8(lc.a0) +
+                   " A1=" + h8(lc.a1) + " -> D0=" + h8(lc.result) + (lc.note.empty() ? "" : "  [" + lc.note + "]") + "  called from " + h6(lc.caller) + "\n";
+        }
+        m.os_->clearLog();
+        return out.empty() ? "no library calls\n" : out;
+    }
+    if (cmd == "console") {
+        if (!m.os_) return "no emulated OS (use: machine amiga500 chipkb os)\n";
+        const std::string text = m.os_->console();
+        m.os_->clearConsole();
+        return text.empty() ? "(empty)\n" : text + (text.back() == '\n' ? "" : "\n");
     }
     if (cmd == "reset") {
         resetMachine(a.size() > 1 && lower(a[1]) == "mem");
@@ -633,23 +671,43 @@ std::string Monitor::Impl::cmdSymbols(const std::vector<std::string>& a) {
 }
 
 std::string Monitor::Impl::cmdMachine(const std::vector<std::string>& a) {
-    if (a.size() == 1) return m.amiga_ ? "amiga500 (" + std::to_string(m.amiga_->config().chipKb) + " KiB chip RAM)\n" : "generic (16 MiB RAM)\n";
+    if (a.size() == 1)
+        return m.amiga_ ? "amiga500 (" + std::to_string(m.amiga_->config().chipKb) + " KiB chip RAM" + (m.os_ ? ", emulated OS calls" : "") + ")\n"
+                        : "generic (16 MiB RAM)\n";
     const std::string type = lower(a[1]);
     if (type == "generic") {
+        m.os_.reset();
         m.amiga_.reset();
         cpu().readOverride = nullptr;
         cpu().writeOverride = nullptr;
+        cpu().executeHook = nullptr;
     } else if (type == "amiga500") {
         AmigaConfig cfg;
-        if (a.size() > 2) cfg.chipKb = static_cast<unsigned>(number(a[2]));
+        bool wantOs = false;
+        for (std::size_t i = 2; i < a.size(); ++i) {
+            if (lower(a[i]) == "os") wantOs = true;
+            else cfg.chipKb = static_cast<unsigned>(number(a[i]));
+        }
         if (cfg.chipKb < 64 || cfg.chipKb > 2048) throw MonitorError("chip_kb must be 40..800 (hex) = 64..2048");
+        m.os_.reset();
+        cpu().executeHook = nullptr;
         m.amiga_ = std::make_unique<Amiga500>(*m.memory_, cfg);
         m.amiga_->install(cpu());
+        if (wantOs) {
+            m.os_ = std::make_unique<AmigaOs>(*m.memory_, *m.amiga_);
+            if (!m.os_->supported()) {
+                m.os_.reset();
+                throw MonitorError("os needs chip RAM of at least 200 (hex) = 512 KiB");
+            }
+            m.os_->install(cpu());
+        }
     } else {
         throw MonitorError("unknown machine '" + a[1] + "' (generic, amiga500)");
     }
     m.symbols_.clear();
     m.checkpoints_.clear();
+    m.amigaCheckpoints_.clear();
+    m.osCheckpoints_.clear();
     resetMachine(true);
     return "ok\n";
 }
@@ -789,6 +847,10 @@ std::string Monitor::Impl::cmdFiles(const std::string& cmd, const std::vector<st
                 regs().d[0] = 0;
                 regs().a[0] = 0;
                 regs().a[7] = m.amiga_ ? m.amiga_->config().chipKb * 1024U - 16 : kGenericStackTop;
+                if (m.os_) {
+                    if (img.end > m.os_->heapBase()) throw MonitorError("the program reaches into the heap of the emulated OS (above " + h6(m.os_->heapBase()) + ")");
+                    m.os_->prepareProgram(cpu());
+                }
                 wake();
                 m.nextDisassembly_ = img.entry;
                 return out + "ok: PC=" + h6(img.entry) + ", " + std::to_string(img.symbols.size()) + " symbols\n";

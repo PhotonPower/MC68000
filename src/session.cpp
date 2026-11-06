@@ -35,6 +35,10 @@ void Session::resetMachine(bool clearMemory) {
     st.irqVector = -1;
     cpu_->setState(st);
     if (amiga_) amiga_->reset(*cpu_);
+    if (os_) {
+        os_->reset();
+        cpu_->registers().a[7] = os_->stackTop();
+    }
 }
 
 Json Session::handle(const Json& request) {
@@ -136,6 +140,7 @@ Json Session::Impl::run() {
     if (isAnalysisCommand(cmd)) return cmdAnalysis(cmd);
     if (cmd == "machine") return cmdMachine();
     if (cmd == "io") return cmdIo();
+    if (cmd == "libcalls" || cmd == "console") return cmdOs(cmd);
     if (cmd == "load_rom") {
         requireFiles("load_rom");
         if (!s.amiga_) throw SessionError("load_rom needs an amiga500 machine (use the 'machine' command first)");
@@ -155,8 +160,8 @@ Json Session::Impl::cmdHelp() {
     static const char* names[] = {
         "help", "machine", "reset", "asm", "dis", "read", "write", "load_file", "load_rom", "regs", "set", "step", "step_over",
         "run", "run_until_return", "call", "break", "unbreak", "breaks", "clear_breaks", "watch", "unwatch", "checkpoint",
-        "rollback", "drop", "checkpoints", "diff", "state", "set_state", "save_state", "load_state", "interrupt", "io", "symbols",
-        "analyze", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data", "ann_comment", "ann_remove",
+        "rollback", "drop", "checkpoints", "diff", "state", "set_state", "save_state", "load_state", "interrupt", "io", "libcalls", "console", "symbols",
+        "libcalls", "console", "analyze", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data", "ann_comment", "ann_remove",
         "ann_title", "ann_list", "ann_save", "ann_load"};
     Json arr = Json::array();
     for (const char* n : names) arr.push(n);
@@ -168,6 +173,7 @@ Json Session::Impl::cmdHelp() {
 Json Session::Impl::cmdMachine() {
     const std::string type = arg("type") ? str("type") : "generic";
     if (type == "generic") {
+        s.os_.reset();
         s.amiga_.reset();
         s.cpu_->readOverride = nullptr;
         s.cpu_->writeOverride = nullptr;
@@ -178,9 +184,19 @@ Json Session::Impl::cmdMachine() {
         if (const Json* j = arg("fast_kb")) c.fastKb = static_cast<unsigned>(number(*j));
         if (c.chipKb < 64 || c.chipKb > 2048) throw SessionError("chip_kb must be 64..2048");
         if (c.slowKb > 1792 || c.fastKb > 8192) throw SessionError("slow_kb must be <= 1792, fast_kb <= 8192");
+        s.os_.reset();
+        s.cpu_->executeHook = nullptr;
         s.amiga_ = std::make_unique<Amiga500>(*s.memory_, c);
         s.amiga_->setMaxLog(s.options_.maxIoLog);
         s.amiga_->install(*s.cpu_);
+        if (flag("os")) {
+            s.os_ = std::make_unique<AmigaOs>(*s.memory_, *s.amiga_);
+            if (!s.os_->supported()) {
+                s.os_.reset();
+                throw SessionError("os needs chip_kb >= 512");
+            }
+            s.os_->install(*s.cpu_);
+        }
     } else {
         throw SessionError("unknown machine type '" + type + "' (generic, amiga500)");
     }
@@ -198,6 +214,7 @@ Json Session::Impl::cmdMachine() {
         j.set("chip_kb", s.amiga_->config().chipKb);
         j.set("slow_kb", s.amiga_->config().slowKb);
         j.set("fast_kb", s.amiga_->config().fastKb);
+        j.set("os", s.os_ != nullptr);
     }
     j.set("regs", regsJson());
     return j;
@@ -258,6 +275,7 @@ Json Session::Impl::cmdAsm() {
     if (const Json* e = arg("entry")) {
         const Address a = address(*e);
         s.cpu_->registers().pc = a;
+        if (s.os_) s.os_->prepareProgram(*s.cpu_);  // started like AmigaDOS starts a program
         j.set("entry", hexAddr(a));
     }
     return j;
@@ -386,6 +404,10 @@ Json Session::Impl::cmdLoadFile() {
         r.d[0] = 0;
         r.a[0] = 0;
         r.a[7] = s.amiga_ ? s.amiga_->config().chipKb * 1024U - 16 : kGenericStackTop;
+        if (s.os_) {
+            if (img.end > s.os_->heapBase()) throw SessionError("the program reaches into the heap of the emulated OS (above " + hexAddr(s.os_->heapBase()) + "); load it lower with 'addr'");
+            s.os_->prepareProgram(*s.cpu_);
+        }
         j.set("hunks", hunks).set("entry", hexAddr(img.entry)).set("end", hexAddr(img.end));
         j.set("symbols", symbolsJson(syms));
     } else {
@@ -518,6 +540,7 @@ Json Session::Impl::cmdCheckpoint(const std::string& cmd) {
         Checkpoint c;
         c.machine = capture(*s.cpu_);
         if (s.amiga_) c.amiga = s.amiga_->state();
+        if (s.os_) c.os = s.os_->state();
         s.checkpoints_[name] = std::move(c);
         return j;
     }
@@ -529,6 +552,7 @@ Json Session::Impl::cmdCheckpoint(const std::string& cmd) {
     }
     restore(*s.cpu_, it->second.machine);  // rollback
     if (s.amiga_ && it->second.amiga) s.amiga_->setState(*it->second.amiga);
+    if (s.os_ && it->second.os) s.os_->setState(*it->second.os);
     j.set("regs", regsJson());
     return j;
 }
@@ -572,6 +596,37 @@ Json Session::Impl::cmdSetState() {
         if (reg) setRegister(name, number(v));
     }
     return Json::object();
+}
+
+Json Session::Impl::cmdOs(const std::string& cmd) {
+    Json j = Json::object();
+    if (!s.os_) {
+        j.set("note", "no emulated OS: use machine type amiga500 with os:true");
+        if (cmd == "libcalls") j.set("calls", Json::array());
+        else j.set("text", "");
+        return j;
+    }
+    if (cmd == "console") {
+        j.set("text", s.os_->console());
+        if (flag("clear", true)) s.os_->clearConsole();
+        return j;
+    }
+    Json arr = Json::array();
+    for (const LibCall& c : s.os_->log()) {
+        Json e = Json::object();
+        e.set("library", c.library).set("offset", c.offset);
+        if (!c.function.empty()) e.set("function", c.function);
+        e.set("emulated", c.emulated).set("caller", hexAddr(c.caller));
+        Json args = Json::object();
+        args.set("D0", hex32(c.d0)).set("D1", hex32(c.d1)).set("D2", hex32(c.d2)).set("D3", hex32(c.d3));
+        args.set("A0", hex32(c.a0)).set("A1", hex32(c.a1));
+        e.set("args", args).set("result", hex32(c.result));
+        if (!c.note.empty()) e.set("note", c.note);
+        arr.push(e);
+    }
+    j.set("calls", arr);
+    if (flag("clear", true)) s.os_->clearLog();
+    return j;
 }
 
 Json Session::Impl::cmdIo() {

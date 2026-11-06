@@ -36,10 +36,11 @@ siehe die Entscheidungen in der [Roadmap](roadmap.md).
 | `traceHook`, `accessHook` | Rückrufe vor jedem Befehl bzw. bei jedem Datenzugriff |
 | `readOverride`, `writeOverride` | Zugriffe abfangen (speicherabgebildete Geräte, ROM, Overlay); `readOverride` gilt auch für Befehlsholen und Vektorlesen |
 | `resetHook` | der `RESET`-Befehl |
+| `executeHook`, `hookLow`/`hookHigh` | statt eines Befehls aufgerufen, wenn der PC im Bereich liegt (Betriebssystemfunktionen, [amiga500.md](amiga500.md)); `returnFromSubroutine()` und `requestStop(text)` (→ `StopReason::Requested`) für den Haken |
 | `registers()`, `setSr()`, `peek()` | Zugriff auf den Zustand ohne Seiteneffekte |
 | `state()`, `setState()` | der ganze Prozessorzustand (Register, Zähler, anstehender Interrupt) – Grundlage der Snapshots |
 
-Die Ergebnisse von `run…` nennen den Grund (`StopReason`): Limit, Breakpoint, Watchpoint, Reached, Returned, Stopped, Halted.
+Die Ergebnisse von `run…` nennen den Grund (`StopReason`): Limit, Breakpoint, Watchpoint, Reached, Returned, Stopped, Halted, Requested.
 
 ## Genauigkeit
 

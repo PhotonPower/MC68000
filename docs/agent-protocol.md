@@ -51,7 +51,8 @@ Eine vollständige Beispielsitzung liegt in `examples/agent_session.jsonl`: `m68
 ```
 
 `stop` ist einer von: `stepped`, `breakpoint`, `address`, `returned`, `stopped` (`STOP`-Befehl: wartet auf einen
-Interrupt), `halted` (Doppelfehler), `instruction_limit`, `watchpoint` (dann zusätzlich `"watch":{"addr":"0x…"}`).
+Interrupt), `halted` (Doppelfehler), `instruction_limit`, `exit` (die OS-Emulation beendete den Lauf: das Programm kehrte zum System
+zurück oder rief `Exit`; Text in `message`), `watchpoint` (dann zusätzlich `"watch":{"addr":"0x…"}`).
 `exceptions` zählt die Ausnahmen und Interrupts, die während des Aufrufs auftraten; `last_exception` ist die Vektornummer
 der letzten (nur wenn es welche gab). `flags` ist `XNZVC` mit `.` für gelöschte Bits. Die Zähler in `regs` sind
 Gesamtzähler seit dem letzten `reset`.
@@ -85,7 +86,9 @@ Gesamtzähler seit dem letzten `reset`.
 | `io` | `clear?` (true) | `amiga500`: Protokoll aller Schreibzugriffe auf Custom-Chip-/CIA-Register, ROM und „unmapped“ (`output:[{addr,size,value,pc,kind,what?}]`, höchstens 4096; wird beim Lesen geleert); `what` ist der Registername (z. B. `COLOR00`, `DMACON`), `pc` die Adresse des schreibenden Befehls |
 | `reset` | `memory?` | Register zurücksetzen (mit `memory:true` auch den Speicher löschen); Zähler auf 0 |
 | `symbols` | – | alle Marken |
-| `machine` | `type`, `chip_kb?` (512), `slow_kb?` (0), `fast_kb?` (0) | Maschine wählen (siehe oben) |
+| `machine` | `type`, `chip_kb?` (512), `slow_kb?` (0), `fast_kb?` (0), `os?` (false) | Maschine wählen (siehe oben); `os:true` (nur `amiga500`, ≥ 512 KiB Chip-RAM) schaltet die **OS-Emulation** ein ([amiga500.md](amiga500.md#emulierte-bibliotheksaufrufe-m68kamigaos)) |
+| `libcalls` | `clear?` (true) | `calls:[{library,offset,function?,emulated,caller,args:{D0..D3,A0,A1},result,note?}]` – alle Bibliotheksaufrufe seit dem letzten Lesen; `emulated:false` = nur protokolliert, `D0` = 0 |
+| `console` | `clear?` (true) | `text`: was das Programm über `dos Write` auf die Standardausgabe geschrieben hat |
 | `help` | – | Befehlsliste |
 
 ### Reverse Engineering ([reverse-engineering.md](reverse-engineering.md))

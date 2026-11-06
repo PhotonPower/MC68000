@@ -7,8 +7,8 @@
 
 **Version 0.5:** Dekoder, Assembler, Disassembler, Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`), Amiga-500-Speicherkarte,
 Monitor (`m68ktool monitor`) und die Reverse-Engineering-Werkzeuge (Analyse, Annotationen, verifiziertes Listing) sind fertig und gegen
-GNU binutils bzw. Musashi kreuzgeprüft ([testing.md](testing.md)). Dazu kommt der Orchestrator für ein lokales LLM (nur gegen einen Mock getestet). Offen sind vor allem seine Erprobung mit einem echten
-Modell und Stubs für Amiga-Bibliotheksaufrufe.
+GNU binutils bzw. Musashi kreuzgeprüft ([testing.md](testing.md)). Dazu kommt der Orchestrator für ein lokales LLM (nur gegen einen Mock getestet). Offen ist vor allem seine Erprobung mit einem echten
+Modell.
 
 ## Meilenstein 0.2 – Dekoder, Assembler, Disassembler (erledigt)
 
@@ -34,9 +34,12 @@ Erledigt ([emulator.md](emulator.md), [agent-protocol.md](agent-protocol.md), [a
 - Amiga-500-Speicherkarte (Chip-/Fast-/Slow-RAM, Custom-/CIA-Register als Speicher mit Schreibprotokoll, ROM-Overlay);
   Hunk-Programme laden und starten
 
+- **OS-Emulation** (`m68k::AmigaOs`, [amiga500.md](amiga500.md#emulierte-bibliotheksaufrufe-m68kamigaos)): ExecBase, Bibliotheksbasen mit
+  Sprungtabellen, `AllocMem`/`FreeMem`/`AllocVec`/`FreeVec`, `OpenLibrary`/`CloseLibrary`, `FindTask`, dos `Output`/`Write`/…/`Exit`;
+  alles andere wird protokolliert (`libcalls`) und liefert 0
+
 Offen (Ideen):
-- Stubs für häufige Amiga-Bibliotheksfunktionen (`exec`, `dos`; `JSR -offset(A6)`), die ihr Ergebnis im Speicher nachbilden,
-  samt ExecBase und `A6`
+- weitere `exec`-/`dos`-Funktionen (Listen, Nachrichten/Ports, `Open` auf eine Dateiabbildung, `Printf`-Familie) – nur, wo die Semantik sicher bekannt ist
 - Befehlsfolgen im Differenztest (Zustand über mehrere Befehle), Adressfehler gegen Musashi mit eingeschalteter Emulation
 
 ## Meilenstein 0.4 – Monitor (erledigt)
@@ -60,13 +63,11 @@ Mock-Ollama.
 
 Offen:
 - **Erprobung mit einem echten Modell** (bisher nur Mock) und Feinschliff von Prompt und Parametern
-- Stubs für Amiga-Bibliotheksaufrufe (`exec`, `dos`) samt ExecBase und `A6`
 - Erkennung von Sprungtabellen und Datentypen
 
 ## Danach (Ideen)
 
 - Makros, `INCLUDE`, bedingte Assemblierung
-- Stubs für häufige Amiga-Bibliotheksfunktionen (`exec`, `dos`), die ihr Ergebnis im Speicher nachbilden
 - Projektdatei (Kommentare, Symbole, Bereiche) statt vieler Kommandozeilenoptionen
 
 ## Entscheidungen

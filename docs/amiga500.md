@@ -23,9 +23,46 @@
 
 Amiga-Programme rufen das Betriebssystem nicht über `TRAP`, sondern über **Bibliotheksvektoren** auf:
 `JSR -offset(A6)` mit der Basisadresse der Bibliothek in `A6` (z. B. `exec.library` über Adresse 4).
-Für Disassembler und Reverse Engineering heißt das: Sprünge mit negativer Verschiebung relativ zu `A6`
-werden über eine Tabelle von Bibliotheken, Offsets und Funktionsnamen (*LVO-Tabelle*) benannt – das
-Gegenstück zur Firmware-Tabelle des CPC im Z80-Projekt.
+Für Disassembler und Reverse Engineering heißt das: `routines` meldet solche Aufrufe mit ihrem Offset (`library_calls`).
+Die Funktionen selbst bildet die **OS-Emulation** nach (nächster Abschnitt); eine eingebaute Namenstabelle für alle Bibliotheken
+gibt es nicht, weil falsche Namen in die Irre führen.
+
+## Emulierte Bibliotheksaufrufe (`m68k::AmigaOs`)
+
+Mit `machine {"type":"amiga500","os":true}` (Monitor: `machine amiga500 os`) bekommt das Programm gerade genug AmigaOS, um an seinen
+Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ansehen kann. Voraussetzung: mindestens 512 KiB Chip-RAM.
+
+- **Aufbau:** Bei Adresse `4` steht der Zeiger auf eine `ExecBase` (mit `ThisTask`, einem minimalen Prozess-Knoten); jede geöffnete
+  Bibliothek bekommt eine Basis mit **echter Sprungtabelle** (`JMP`-Befehle unter der Basis). Die Ziele liegen im Adressbereich
+  `$F00000–$F7FFFF`, den der Prozessor nicht ausführt, sondern an den Emulator übergibt (`Cpu::executeHook`) – das Programm ruft
+  `JSR -552(A6)` genau wie auf dem Amiga. Speicher: Programm unterhalb von Chip/2 (Hunk-Standard `$20000`), darüber der Heap für
+  `AllocMem` bis zu einem 16-KiB-Stapelbereich, in den obersten 24 KiB die OS-Strukturen (`512 KiB`: Heap `$40000–$76000`, Stapel ab
+  `$7A000−16`). Bis zu sieben Bibliotheken (exec + sechs); die achte `OpenLibrary` liefert 0.
+- **Wirklich nachgebildet:**
+
+  | Bibliothek | Funktion (Offset) | Verhalten |
+  |---|---|---|
+  | exec | `AllocMem` (−198), `FreeMem` (−210) | First-Fit im Heap, auf 8 Byte gerundet, `MEMF_CLEAR` (`$10000`) füllt mit 0; Größe 0 oder zu groß → 0; `FreeMem` eines unbekannten Blocks wird protokolliert |
+  | exec | `AllocVec` (−684), `FreeVec` (−690) | wie oben, Größe steht 8 Byte vor dem Zeiger |
+  | exec | `OpenLibrary` (−552), `OldOpenLibrary` (−408), `CloseLibrary` (−414) | jede Bibliothek wird geöffnet (leere Sprungtabelle); gleicher Name → gleiche Basis; die Version wird ignoriert |
+  | exec | `FindTask` (−294) | liefert den Prozess-Knoten (`ln_Type` = 13), auch für einen Namen |
+  | exec | `Forbid`, `Permit`, `Disable`, `Enable` | tun nichts |
+  | dos | `Output` (−60), `Input` (−54), `Write` (−48) | `Write` auf die Standardausgabe sammelt den Text (`console`); sonst −1 |
+  | dos | `Read` (−42), `Close` (−36), `Delay` (−198), `UnLock`, `UnLoadSeg` | Dateiende bzw. tun nichts |
+  | dos | `Open` (−30), `Lock` (−84), `LoadSeg` (−150) | es gibt **keine Dateien**: 0 und `IoErr` = 205 (Objekt nicht gefunden) |
+  | dos | `IoErr` (−132), `Exit` (−144) | `Exit` beendet den Lauf (`stop: "exit"`) |
+
+- **Alles andere wird nur protokolliert:** Jeder andere Aufruf – ob der Name bekannt ist (`Wait`, `GetMsg`, `OpenDevice`, …) oder nicht (alle
+  `graphics`-/`intuition`-Funktionen) – landet in `libcalls` (Bibliothek, Offset, Name falls bekannt, Register, Rücksprungadresse,
+  `emulated: false`) und liefert `D0 = 0`; sonst passiert nichts. Nichts blockiert, nichts wird geplant, es gibt keine Fenster, keine Grafik,
+  keine Dateien, keine Signale/Nachrichten. Ein Programm, das auf ein Ergebnis wartet, nimmt dadurch meist seinen Fehlerpfad.
+- **Programmstart:** Ein per `load_file` (Hunk) geladenes Programm – ebenso `asm` mit `entry`, im Monitor `prog adr` – startet wie unter
+  AmigaDOS: `D0`=`A0`=0, Stapel unter den OS-Strukturen, **Rücksprungadresse auf einen Exit-Stub**: das abschließende `RTS` beendet den Lauf mit
+  `stop: "exit"` und der Meldung `the program returned to the system (D0 = rc)`.
+- **Zustand:** Belegungen, geöffnete Bibliotheken, Konsole und `IoErr` gehören zu den Checkpoints (Rollback stellt sie wieder her).
+- **Ohne Gewähr:** Funktionsnamen und Offsets stammen aus den Amiga-Include-Dateien (`exec_lib.fd`, `dos_lib.fd`) **aus dem Gedächtnis**;
+  bitte vor dem Verlassen darauf gegen das NDK prüfen. Die Registerbelegungen (z. B. `AllocMem`: D0 = Größe, D1 = Anforderungen; `Write`: D1 =
+  Datei, D2 = Puffer, D3 = Länge) ebenso.
 
 ## Dateiformate
 
@@ -57,8 +94,8 @@ Gegenstück zur Firmware-Tabelle des CPC im Z80-Projekt.
   Richtungsbit (`$BFE201`) auf 0 schreibt – so schaltet das Kickstart das RAM nach Adresse 0. Ohne ROM gibt es kein Overlay.
   Befehlsholen und Vektorlesen gehen durch dieselbe Abbildung; Code im ROM läuft also.
 - **Hunk-Programme:** `load_file` lädt sie ab `$20000` (anpassbar), setzt den PC auf den Anfang des ersten Code-Hunks,
-  `D0`=`A0`=0 und den Stapel an das Ende des Chip-RAM (`chip_kb*1024 - 16`). Bibliotheksaufrufe (`JSR -offset(A6)`) sind
-  noch **nicht** nachgebildet: `A6` und die ExecBase fehlen; solche Programme laufen bis zum ersten Bibliotheksaufruf.
+  `D0`=`A0`=0 und den Stapel an das Ende des Chip-RAM (`chip_kb*1024 - 16`). Bibliotheksaufrufe (`JSR -offset(A6)`) laufen ohne OS-Emulation
+  (`os` nicht gesetzt) ins Leere; mit `os:true` werden einige nachgebildet, der Rest protokolliert (siehe oben).
 
 Nicht vorgesehen (Entscheidung): Blitter, Copper, Paula/Ton, Disketten (ADF), Bildschirmdarstellung der Bitplanes, Kickstart-Boot.
-Ein späterer Ausbau (Stubs für `exec`/`dos`-Funktionen, die ihr Ergebnis im Speicher nachbilden) steht in der [Roadmap](roadmap.md).
+Mögliche Erweiterungen der OS-Emulation (weitere `exec`/`dos`-Funktionen, Strukturen wie `FileHandle`/`Process`) stehen in der [Roadmap](roadmap.md).

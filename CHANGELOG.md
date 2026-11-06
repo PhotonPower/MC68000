@@ -7,6 +7,12 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Emulierte Amiga-Bibliotheksaufrufe** (`m68k::AmigaOs`, `machine … os:true`): ExecBase bei Adresse 4, Bibliotheksbasen mit echter
+  `JMP`-Sprungtabelle, deren Ziele der Emulator abfängt (`Cpu::executeHook`); nachgebildet sind `AllocMem`/`FreeMem`/`AllocVec`/`FreeVec`,
+  `OpenLibrary`/`CloseLibrary`, `FindTask`, `Forbid`/`Permit`/`Disable`/`Enable` sowie dos `Output`/`Input`/`Write`/`Read`/`Close`/`Open`/
+  `Lock`/`IoErr`/`Delay`/`Exit`; **jeder andere Aufruf wird protokolliert und liefert 0**. Neue Protokollbefehle `libcalls` und `console`,
+  Stop-Grund `exit`; Monitor: `machine amiga500 os`, `prog`, `libcalls`, `console`; der Orchestrator meldet Bibliotheksaufrufe im
+  `run_routine`-Ergebnis (`--no-os` schaltet es ab). Tests `os` (76 Prüfungen), Monitor- und Orchestrator-Tests.
 - **Orchestrator** `agent/m68k_annotate.py` (Python, nur Standardbibliothek): lässt ein lokales Modell über Ollama ein Programm Routine für
   Routine analysieren, im Emulator ausprobieren und annotieren (nach dem Vorbild von `z80_annotate.py`; ohne Bilder, mit Amiga-Prompt);
   Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Projektdatei, Bericht, verifiziertes Listing. Tests `tests/agent/` gegen einen

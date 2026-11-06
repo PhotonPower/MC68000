@@ -64,7 +64,9 @@ schreibt man `#$0A` ([assembler-syntax.md](assembler-syntax.md)).
 | `ck name` / `rb name` | Checkpoint (CPU + Speicher) anlegen / zurückspielen |
 | `savestate datei` / `loadstate datei` | Snapshot-Datei (`M68KSNP1`) |
 | `int pegel [vektor]` | Interrupt anfordern (1–7); wird vor dem nächsten Befehl angenommen, wenn der Pegel über der Maske liegt |
-| `machine [generic\|amiga500 [chip_kb]]` | Maschine anzeigen / wählen (löscht Speicher und Symbole); `chip_kb` hexadezimal |
+| `machine [generic\|amiga500 [chip_kb] [os]]` | Maschine anzeigen / wählen (löscht Speicher und Symbole); `chip_kb` hexadezimal; `os` schaltet die emulierten `exec`-/`dos`-Aufrufe ein ([amiga500.md](amiga500.md)) |
+| `prog adr` | Programm starten wie AmigaDOS (PC, `D0`=`A0`=0, Rücksprung auf den Exit-Stub; braucht `os`) |
+| `libcalls`, `console` | Bibliotheksaufrufe seit dem letzten Lesen / über `dos Write` ausgegebener Text (beide werden beim Lesen geleert) |
 | `rom datei` | Kickstart-ROM laden (nur `amiga500`; SSP/PC kommen aus dem ROM) |
 | `io` | `amiga500`: Schreibzugriffe auf Custom-/CIA-Register, ROM und „unmapped“ (wird beim Lesen geleert) |
 | `reset [mem]` | CPU zurücksetzen (mit `mem` auch Speicher löschen) |

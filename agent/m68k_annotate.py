@@ -428,6 +428,8 @@ class Tools:
             s.ok(cmd="write", addr=norm_addr(m["addr"]), hex=digits)
         regs = {k: (norm_addr(v) if isinstance(v, str) else v) for k, v in (registers or {}).items()}
         s.ok(cmd="io")  # empty the device-write log
+        s.ok(cmd="libcalls")  # ... the library-call log
+        s.ok(cmd="console")   # ... and the console
         limit = max(1, min(int(max_instructions), 5_000_000))  # a runaway loop must not stall the whole analysis
         reply = s.call(cmd="call", addr=norm_addr(addr), regs=regs, max_instructions=limit)
         if not reply.get("ok"):
@@ -469,6 +471,23 @@ class Tools:
                     out.append(f"  ... and {len(group) - cap} more from {label}")
             if any(w["kind"] == "unmapped" for w in writes):
                 out.append("NOTE: writes to unmapped addresses were dropped; that usually means a pointer register was not set up.")
+        calls = s.ok(cmd="libcalls").get("calls", [])
+        if calls:
+            out.append(f"library calls made: {len(calls)}")
+            for c in calls[:12]:
+                name = c.get("function") or f'(unknown function at offset {c["offset"]})'
+                a = c["args"]
+                out.append(f'  {c["library"]} {c["offset"]} {name}' + ("" if c["emulated"] else " [NOT emulated: only logged, returned D0=0]") +
+                           f' D0={a["D0"][2:]} D1={a["D1"][2:]} A0={a["A0"][2:]} A1={a["A1"][2:]} -> D0={c["result"][2:]}' +
+                           (f' [{c["note"].strip()}]' if c.get("note") else "") + f' called from {c["caller"]}')
+            if len(calls) > 12:
+                out.append(f"  ... and {len(calls) - 12} more")
+            if any(not c["emulated"] for c in calls):
+                out.append("NOTE: calls that are not emulated return 0, which may make the routine take an error path. That is a limit of the "
+                           "emulator; describe what the call is MEANT to do from its offset and arguments.")
+        text = s.ok(cmd="console").get("text", "")
+        if text:
+            out.append(f"text written to the console (dos Write): {text!r}")
         if not keep_state:
             s.ok(cmd="rollback", name="baseline")
         else:
@@ -564,7 +583,10 @@ MC68000 / Amiga facts that are easy to get wrong:
   is the usual save/restore pair. DBRA Dn,label is a counting loop: Dn.w counts DOWN from n to -1, so the body runs n+1 times.
 - Instructions and 16/32 bit data must be at EVEN addresses; an odd address raises an address error (vector 3).
 - Amiga system calls are JSR -offset(A6): A6 holds the base of a library; the negative offset selects the function (a multiple of 6).
-  The base of exec.library is read from the absolute address 4 (MOVEA.L 4.W,A6). Examples in exec.library: -552 OpenLibrary (A1 = name
+  The base of exec.library is read from the absolute address 4 (MOVEA.L 4.W,A6). The emulator really emulates a few exec functions
+  (AllocMem, FreeMem, AllocVec, FreeVec, OpenLibrary, CloseLibrary, FindTask) and dos Output/Write/Read/Close/Open/IoErr/Delay/Exit;
+  every other library call is only LOGGED by run_routine and returns D0 = 0 ("NOT emulated"), so do not read meaning into that 0.
+  Examples in exec.library: -552 OpenLibrary (A1 = name
   string such as "dos.library", D0 = version), -414 CloseLibrary, -198 AllocMem, -210 FreeMem. Say which library an A6 value belongs to
   only if you can see where it came from; otherwise describe the call by its offset and arguments.
 - The custom chips live at $DFF000-$DFFFFF. In DMACON ($DFF096), INTENA ($DFF09A), INTREQ ($DFF09C) and ADKCON ($DFF09E) bit 15 selects
@@ -629,7 +651,7 @@ class Annotator:
         a, s = self.a, self.s
         check_server(s)
         if a.machine == "amiga500":
-            s.ok(cmd="machine", type="amiga500", chip_kb=a.chip_kb)
+            s.ok(cmd="machine", type="amiga500", chip_kb=a.chip_kb, os=not a.no_os)
             if a.rom:
                 s.ok(cmd="load_rom", file=a.rom)
         else:
@@ -896,6 +918,7 @@ def main(argv=None):
     p.add_argument("--hunk-base", default="0x20000", help="load address of --hunk")
     p.add_argument("--machine", choices=["amiga500", "generic"], default="amiga500", help="memory map (amiga500: chip RAM, custom/CIA registers, ROM)")
     p.add_argument("--chip-kb", type=int, default=512, help="chip RAM of the amiga500 machine")
+    p.add_argument("--no-os", action="store_true", help="do not emulate exec/dos library calls (they then run into unmapped memory)")
     p.add_argument("--rom", help="Kickstart ROM image (amiga500 only; your own copy, it is not part of this project)")
     p.add_argument("--entry", action="append", help='entry point (repeatable), default: the start of the program, e.g. "0x20000"')
     p.add_argument("--project", help="annotation file (JSON); loaded if present, saved after every routine")

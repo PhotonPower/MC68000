@@ -559,6 +559,13 @@ private:
         if (!r_.supervisor()) raise(kVecPrivilege, c_.startPc_);
     }
 
+public:
+    void returnFromSubroutine() {
+        r_.pc = pop32() & kAddressMask;
+        --c_.depth_;
+    }
+
+private:
     void doMove(Mn mn, const Form& f, Word w, Size s);
     void doMovem(Mn mn, Word w, Size s);
     void doArithmetic(Mn mn, const Form& f, Word w, Size s);
@@ -1178,6 +1185,11 @@ void Cpu::setState(const CpuState& s) {
     irqVector_ = s.irqVector;
 }
 
+void Cpu::returnFromSubroutine() {
+    Exec ex(*this);
+    ex.returnFromSubroutine();
+}
+
 void Cpu::interrupt(unsigned level, int vector) {
     irqLevel_ = level > 7 ? 7 : level;
     irqVector_ = vector;
@@ -1227,6 +1239,20 @@ StepResult Cpu::step() {
     if (stopped_) {
         res.reason = StopReason::Stopped;
         return res;
+    }
+    if (executeHook && (r_.pc & kAddressMask) >= hookLow && (r_.pc & kAddressMask) < hookHigh) {
+        stopRequested_ = false;
+        try {
+            if (executeHook(*this)) {
+                ++instructions_;
+                if (stopRequested_) res.reason = StopReason::Requested;
+                return res;
+            }
+        } catch (const Fault&) {
+            halted_ = true;  // a fault inside an emulated OS function (e.g. a wild stack pointer)
+            res.reason = StopReason::Halted;
+            return res;
+        }
     }
     const bool trace = (r_.sr & kSrTrace) != 0;
     try {
@@ -1284,6 +1310,10 @@ RunResult Cpu::runLoop(std::uint64_t maxInstructions, std::optional<Address> unt
             return out;
         }
         ++out.instructions;
+        if (s.reason == StopReason::Requested) {
+            out.reason = s.reason;
+            return out;
+        }
         if (watchHit_) {
             out.reason = StopReason::Watchpoint;
             out.watchAddress = watchAddress_;
@@ -1322,6 +1352,10 @@ RunResult Cpu::stepOver(std::uint64_t maxInstructions) {
             return out;
         }
         ++out.instructions;
+        if (s.reason == StopReason::Requested) {
+            out.reason = s.reason;
+            return out;
+        }
         if (watchHit_) {
             out.reason = StopReason::Watchpoint;
             out.watchAddress = watchAddress_;

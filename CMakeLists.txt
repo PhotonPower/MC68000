@@ -41,6 +41,7 @@ endfunction()
 # New components (assembler, decoder, cpu, ...) are added to this list as they are written.
 add_library(m68kcore STATIC
   src/amiga.cpp
+  src/amiga_os.cpp
   src/analysis.cpp
   src/annotations.cpp
   src/assembler.cpp

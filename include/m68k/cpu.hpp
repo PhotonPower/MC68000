@@ -5,6 +5,7 @@
 #include <functional>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 #include "m68k/memory.hpp"
@@ -46,7 +47,8 @@ enum class StopReason {
     Reached,     ///< pc reached the requested address
     Returned,    ///< the call depth dropped below its starting value (RTS/RTR/RTE)
     Stopped,     ///< STOP instruction: waiting for an interrupt
-    Halted       ///< double fault: the processor has stopped
+    Halted,      ///< double fault: the processor has stopped
+    Requested    ///< an execute hook asked to stop (see Cpu::stopMessage(), e.g. the program called Exit())
 };
 
 struct StepResult {
@@ -137,6 +139,11 @@ public:
     std::function<bool(Address, Size, Long)> writeOverride;
     /// RESET instruction (resets external devices).
     std::function<void()> resetHook;
+    /// Called instead of executing an instruction when the PC is in [hookLow, hookHigh). Return true if it
+    /// handled the instruction (it must then have moved the PC itself, e.g. with returnFromSubroutine()).
+    /// Used to emulate operating-system functions (docs/amiga500.md).
+    std::function<bool(Cpu&)> executeHook;
+    Address hookLow = 0, hookHigh = 0;
 
     // ---- interrupts and state ----------------------------------------------------------------------
     /// Requests an interrupt of level 1..7 (0 clears it). It is taken before the next instruction if
@@ -148,6 +155,15 @@ public:
     /// Exceptions and interrupts taken since the last reset of the counters (part of the state).
     [[nodiscard]] std::uint64_t exceptionCount() const { return exceptions_; }
     [[nodiscard]] unsigned lastException() const { return lastException_; }
+
+    /// For execute hooks: performs an RTS (pops the PC, adjusts the call depth).
+    void returnFromSubroutine();
+    /// For execute hooks: ends the current run() with StopReason::Requested.
+    void requestStop(std::string message) {
+        stopRequested_ = true;
+        stopMessage_ = std::move(message);
+    }
+    [[nodiscard]] const std::string& stopMessage() const { return stopMessage_; }
 
     [[nodiscard]] bool halted() const { return halted_; }
     [[nodiscard]] bool stopped() const { return stopped_; }
@@ -172,6 +188,8 @@ private:
     bool watchHit_ = false;
     Address watchAddress_ = 0;
     bool halted_ = false, stopped_ = false;
+    bool stopRequested_ = false;
+    std::string stopMessage_;
     std::uint64_t instructions_ = 0;
     std::uint64_t exceptions_ = 0;
     unsigned lastException_ = 0;

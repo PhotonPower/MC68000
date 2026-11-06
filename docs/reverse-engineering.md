@@ -21,7 +21,7 @@ mit Hilfe eines lokalen Modells (z. B. über Ollama). Das Vorbild ist das
 | Werkzeug | Zweck |
 |---|---|
 | `get_listing`, `disassemble`, `read_memory` | ansehen |
-| `run_routine` | Routine im Emulator wie eine Funktion aufrufen (Register/Speicher vorgeben); Ergebnis: Register, geänderter Speicher (Stapel ausgenommen), Schreibzugriffe auf Custom-/CIA-Register (getrennt nach „von der Routine selbst“ und „von aufgerufenem Code“), Ausnahmen (z. B. Adressfehler durch einen nicht gesetzten Zeiger) |
+| `run_routine` | Routine im Emulator wie eine Funktion aufrufen (Register/Speicher vorgeben); Ergebnis: Register, geänderter Speicher (Stapel ausgenommen), Schreibzugriffe auf Custom-/CIA-Register (getrennt nach „von der Routine selbst“ und „von aufgerufenem Code“), Ausnahmen (z. B. Adressfehler durch einen nicht gesetzten Zeiger), **Bibliotheksaufrufe** (Name, Register, ob emuliert) und über `dos Write` ausgegebener Text |
 | `reset_machine` | Ausgangszustand wiederherstellen (sonst geschieht das nach jedem `run_routine` automatisch) |
 | `name_label`, `document_routine`, `name_variable`, `mark_data`, `add_comment` | **Namen und Kommentare** festhalten |
 | `finish_routine` | Routine abschließen |
@@ -42,7 +42,7 @@ mit einem Modell, das **Tool-Aufrufe** kann (Fähigkeiten erkennt das Skript üb
 | Option | Bedeutung |
 |---|---|
 | `--hunk DATEI [--hunk-base ADR]` / `--bin DATEI --org ADR` / `--srec DATEI` | Eingabe (Hunk wird relokiert, Standard `0x20000`) |
-| `--machine amiga500\|generic`, `--chip-kb`, `--rom DATEI` | Speicherkarte ([amiga500.md](amiga500.md)); ein Kickstart-ROM ist optional (eigene Kopie) |
+| `--machine amiga500\|generic`, `--chip-kb`, `--no-os`, `--rom DATEI` | Speicherkarte ([amiga500.md](amiga500.md)); ein Kickstart-ROM ist optional (eigene Kopie) |
 | `--entry ADR` (mehrfach) | Einsprungpunkte (Standard: Anfang des Programms) |
 | `--project DATEI` | Annotationen; wird geladen, falls vorhanden, und nach **jeder Routine** gespeichert → Abbrechen und Fortsetzen ist möglich |
 | `--out DATEI` | fertiges, verifiziertes Listing |
@@ -119,7 +119,7 @@ folgt dem Z80-Vorbild: zuerst, was nichts Undokumentiertes aufruft (`depth` 0), 
 `routines` nennt je Routine: Einsprung, Ausdehnung (alles, was die Sprünge erreichen, ohne die Aufgerufenen), Anzahl der
 Befehle und Bytes, Aufrufer (Adressen der `BSR`/`JSR`), Aufgerufene (mit Namen), Aufrufe **außerhalb** des analysierten Codes,
 **Bibliotheksaufrufe** (`JSR -552(A6)`: Adresse und Offset) und die Tiefe im Aufrufgraphen (Zyklen werden aufgebrochen).
-Bibliotheksfunktionen werden **nicht** benannt: Es gibt keine eingebaute Tabelle (`exec`/`dos`-Offsets), weil falsche Namen
+Bibliotheksfunktionen werden im Listing **nicht** benannt: Es gibt keine eingebaute Tabelle für alle Bibliotheken, weil falsche Namen
 das Modell in die Irre führen würden; der Offset selbst ist ein guter Hinweis, den das Modell oder du per Kommentar auflöst.
 
 ## Was im Listing automatisch passiert
@@ -150,7 +150,7 @@ Begründung abgelehnt. `machine` verwirft die Annotationen zusammen mit allem an
 ## Was noch fehlt
 
 - **Erprobung mit einem echten Modell** und der Feinschliff von Prompt und Parametern; bisher nur gegen einen Mock getestet.
-- **Amiga-Bibliotheksaufrufe**: ExecBase, `A6` und Stubs für `exec`/`dos`; ohne sie laufen Programme bis zum ersten
-  Bibliotheksaufruf ([amiga500.md](amiga500.md)).
+- **Mehr emulierte Bibliotheksfunktionen**: Nur wenige `exec`-/`dos`-Funktionen sind nachgebildet, der Rest wird protokolliert und liefert 0
+  ([amiga500.md](amiga500.md)); Programme, die auf Ergebnisse anderer Bibliotheken (Grafik, Fenster) warten, nehmen ihren Fehlerpfad.
 - **Bildschirm**: keine Darstellung der Bitplanes; das Modell sieht nur Speicher und Registerprotokolle (Entscheidung, siehe Roadmap).
 - Erkennung von Sprungtabellen und Datentypen; derzeit hilft `ann_data` und der Hinweis auf Zeiger.

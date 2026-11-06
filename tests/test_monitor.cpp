@@ -357,6 +357,38 @@ int main() {
         CHECK(isError(m.execute("sv x 0 FFFFFF")));
     }
 
+    // ---- emulated library calls ---------------------------------------------------------------------------------------------------------------
+    {
+        Monitor m;
+        CHECK(has(m.execute("libcalls"), "no emulated OS"));
+        CHECK(isError(m.execute("prog 20000")));
+        CHECK(isError(m.execute("machine amiga500 100 os")));            // 256 KiB is too little
+        CHECK_EQ(m.execute("machine amiga500 os"), std::string("ok\n"));
+        CHECK(has(m.execute("machine"), "emulated OS calls"));
+        writeTextFile("m68k_mon_os.s",
+                      "        ORG $20000\nstart:  MOVEA.L 4.W,A6\n        LEA dosname(PC),A1\n        MOVEQ #0,D0\n        JSR -552(A6)\n"
+                      "        MOVEA.L D0,A6\n        JSR -60(A6)\n        MOVE.L D0,D1\n        LEA msg(PC),A0\n        MOVE.L A0,D2\n"
+                      "        MOVEQ #3,D3\n        JSR -48(A6)\n        MOVEQ #0,D0\n        RTS\n"
+                      "dosname: DC.B \"dos.library\",0\nmsg:    DC.B \"Hi\",10\n");
+        CHECK(has(m.execute("asm m68k_mon_os.s"), "ok:"));
+        std::remove("m68k_mon_os.s");
+        CHECK(has(m.execute("prog start"), "PC=020000"));
+        const std::string out = m.execute("g");
+        CHECK(has(out, "the program returned to the system (D0 = 0)"));
+        const std::string calls = m.execute("libcalls");
+        CHECK(has(calls, "exec.library -552 OpenLibrary"));
+        CHECK(has(calls, "dos.library -48 Write"));
+        CHECK(has(calls, "[Hi"));
+        CHECK(has(m.execute("console"), "Hi"));
+        CHECK(has(m.execute("console"), "(empty)"));
+        // checkpoints cover the OS state
+        m.execute("prog start");
+        m.execute("ck a");
+        m.execute("g");
+        m.execute("rb a");
+        CHECK(has(m.execute("console"), "(empty)"));
+    }
+
     // ---- help, quitting, empty lines ---------------------------------------------------------------------------------------------------------
     {
         Monitor m;

@@ -11,9 +11,9 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
 > **Status: Version 0.5.** Assembler, Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte,
-> Reverse-Engineering-Werkzeuge und der Orchestrator für ein lokales LLM sind fertig und geprüft (GNU `objdump`/`as`, Musashi,
-> Mock-Ollama). Der Orchestrator wurde noch nicht mit einem echten Modell ausprobiert; es fehlen außerdem Stubs für
-> Amiga-Bibliotheksaufrufe ([Roadmap](docs/roadmap.md)).
+> Reverse-Engineering-Werkzeuge, ein Orchestrator für ein lokales LLM und die Emulation einiger Amiga-Bibliotheksaufrufe sind
+> fertig und geprüft (GNU `objdump`/`as`, Musashi, Mock-Ollama). Der Orchestrator wurde noch nicht mit einem echten Modell
+> ausprobiert ([Roadmap](docs/roadmap.md)).
 
 ## Was es heute gibt
 
@@ -53,6 +53,9 @@ und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 
 **Amiga 500** ([docs/amiga500.md](docs/amiga500.md)): Speicherkarte (Chip-/Fast-/Slow-RAM, Custom-Chip- und CIA-Register als
 Speicher mit Schreibprotokoll, ROM mit Overlay); Amiga-Hunk-Programme laden und starten. Keine Geräte (kein Ton/Video/Disk).
+Optional **emulierte Bibliotheksaufrufe** (`os`): ExecBase und Bibliotheksbasen mit echter Sprungtabelle, `AllocMem`/`FreeMem`, `OpenLibrary`,
+`FindTask`, dos `Output`/`Write`/`Exit` u. a.; **alles andere wird protokolliert (`libcalls`) und liefert 0** – kein Blockieren, keine Dateien,
+keine Grafik.
 
 **Reverse Engineering** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): Codefluss-Analyse mit Routinen und
 Aufrufgraph (`analyze`, `routines`), Annotationen (Namen, Dokumentation, Datenbereiche, Kommentare, Projektdatei) und ein
@@ -72,7 +75,7 @@ kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen geteste
 ## Geplant
 
 - Erprobung des Orchestrators mit einem echten Modell und Feinschliff von Prompt und Parametern
-- Stubs für Amiga-Bibliotheksaufrufe (`exec`/`dos`)
+- weitere `exec`-/`dos`-Funktionen in der OS-Emulation
 - Amiga-Hunk-*Ausgabe* des Assemblers
 
 ## Schnellstart

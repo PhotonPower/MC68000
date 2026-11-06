@@ -62,6 +62,7 @@ inline const char* stopName(StopReason r) {
         case StopReason::Returned: return "returned";
         case StopReason::Stopped: return "stopped";
         case StopReason::Halted: return "halted";
+        case StopReason::Requested: return "exit";
     }
     return "?";
 }
@@ -233,6 +234,7 @@ struct Session::Impl {
     Json runReply(const RunResult& r, std::uint64_t exceptionsBefore) const {
         Json j = Json::object();
         j.set("stop", stopName(r.reason));
+        if (r.reason == StopReason::Requested) j.set("message", s.cpu_->stopMessage());
         j.set("instructions", r.instructions);
         j.set("pc", hexAddr(s.cpu_->registers().pc));
         const std::uint64_t ex = s.cpu_->exceptionCount() - exceptionsBefore;
@@ -278,6 +280,7 @@ struct Session::Impl {
     Json cmdSetState();
     Json cmdMachine();
     Json cmdIo();
+    Json cmdOs(const std::string& cmd);
     Json cmdHelp();
     // reverse engineering (session_analysis.cpp)
     bool isAnalysisCommand(const std::string& cmd) const;

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "m68k/amiga.hpp"
+#include "m68k/amiga_os.hpp"
 #include "m68k/analysis.hpp"
 #include "m68k/annotations.hpp"
 #include "m68k/cpu.hpp"
@@ -51,6 +52,7 @@ private:
     struct Checkpoint {
         Snapshot machine;
         std::optional<Amiga500::State> amiga;
+        std::optional<AmigaOs::State> os;
     };
     struct Watch {
         Address start;
@@ -65,6 +67,7 @@ private:
     std::unique_ptr<Memory> memory_;  // heap: a Session is large
     std::unique_ptr<Cpu> cpu_;
     std::unique_ptr<Amiga500> amiga_;  // null = generic machine
+    std::unique_ptr<AmigaOs> os_;      // null = no emulated library calls
     std::map<std::string, std::int64_t> symbols_;
     std::map<std::string, Checkpoint> checkpoints_;
     std::vector<Watch> watches_;

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "m68k/amiga.hpp"
+#include "m68k/amiga_os.hpp"
 #include "m68k/cpu.hpp"
 #include "m68k/memory.hpp"
 #include "m68k/snapshot.hpp"
@@ -58,8 +59,11 @@ private:
     std::unique_ptr<Memory> memory_;
     std::unique_ptr<Cpu> cpu_;
     std::unique_ptr<Amiga500> amiga_;  // null = generic machine
+    std::unique_ptr<AmigaOs> os_;      // null = no emulated library calls
     std::map<std::string, std::int64_t> symbols_;
     std::map<std::string, Snapshot> checkpoints_;
+    std::map<std::string, Amiga500::State> amigaCheckpoints_;
+    std::map<std::string, AmigaOs::State> osCheckpoints_;
     std::vector<Watch> watches_;
     Address nextDisassembly_ = 0;
     Address nextDump_ = 0;

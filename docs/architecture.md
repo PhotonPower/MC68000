@@ -52,6 +52,7 @@ derselben Bibliothek.
 | `snapshot.hpp`                      | `Snapshot` (CPU + Speicher), Datei, Speicher-Diff            | fertig  |
 | `json.hpp`                          | kleiner JSON-Baustein (Parser/Ausgabe, Einfügereihenfolge)   | fertig  |
 | `amiga.hpp`                         | `Amiga500`: Speicherkarte, ROM-Overlay, Geräte-Schreibprotokoll | fertig  |
+| `amiga_os.hpp`                      | `AmigaOs`: ExecBase, Bibliotheksbasen mit Sprungtabellen, einige exec-/dos-Funktionen, Aufrufprotokoll | fertig  |
 | `session.hpp`                       | `Session`: eine Maschine, Marken, Checkpoints; JSON-Befehle  | fertig  |
 | `analysis.hpp`                      | Codefluss-Analyse: Befehle, Routinen, Aufrufgraph, Bibliotheksaufrufe | fertig  |
 | `annotations.hpp`                   | Namen, Dokumentation, Variablen, Datenbereiche, Kommentare; JSON | fertig  |

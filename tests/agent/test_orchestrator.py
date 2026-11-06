@@ -321,6 +321,55 @@ class OrchestratorTest(unittest.TestCase):
         self.assertEqual(code, 0, text)
 
 
+LIBDEMO = """\
+        ORG $1000
+start:  MOVEA.L 4.W,A6
+        LEA gfx(PC),A1
+        MOVEQ #0,D0
+        JSR -552(A6)
+        MOVEA.L D0,A6
+        JSR -222(A6)
+        MOVEA.L 4.W,A6
+        MOVEQ #20,D0
+        MOVEQ #0,D1
+        JSR -198(A6)
+        RTS
+gfx:    DC.B "graphics.library",0
+"""
+
+
+class LibraryCallReportTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(M68KTOOL):
+            raise unittest.SkipTest(f"m68ktool not found at {M68KTOOL} (set M68KTOOL)")
+
+    def test_run_routine_reports_library_calls(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = os.path.join(d, "lib.s")
+            binary = os.path.join(d, "lib.bin")
+            with open(src, "w") as f:
+                f.write(LIBDEMO)
+            r = subprocess.run([M68KTOOL, "asm", src, "-o", binary], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            plans = {"0x001000": [[("run_routine", {"addr": "0x001000"})]]}
+            mock = MockOllama(plans)
+            url = mock.start()
+            try:
+                code, text = run_main(["--bin", binary, "--org", "0x1000", "--host", url, "--model", "mock", "--m68ktool", M68KTOOL,
+                                       "--max-turns", "2", "--only", "0x1000"])
+            finally:
+                mock.stop()
+            results = "\n".join(mock.tool_results)
+            self.assertIn("library calls made: 3", results)
+            self.assertIn("exec.library -552 OpenLibrary", results)
+            self.assertIn("[graphics.library]", results)
+            self.assertIn("(unknown function at offset -222) [NOT emulated", results)
+            self.assertIn("exec.library -198 AllocMem", results)
+            self.assertIn("NOTE: calls that are not emulated", results)
+            self.assertIn("NOT emulated", "\n".join(mock.system_prompts))
+
+
 class HelperTest(unittest.TestCase):
     def test_argument_coercion(self):
         c, notes = annotate.prepare_args("run_routine", {"addr": "0x1000", "max_instructions": "500", "keep_state": "true", "x": 1,
