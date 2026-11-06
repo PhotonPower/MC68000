@@ -10,9 +10,10 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
-> **Status: Version 0.4.** Assembler, Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte und die
-> Reverse-Engineering-Werkzeuge sind fertig und geprüft (GNU `objdump`/`as`, Musashi). Es fehlen der Orchestrator für ein lokales LLM
-> und Stubs für Amiga-Bibliotheksaufrufe ([Roadmap](docs/roadmap.md)).
+> **Status: Version 0.5.** Assembler, Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte,
+> Reverse-Engineering-Werkzeuge und der Orchestrator für ein lokales LLM sind fertig und geprüft (GNU `objdump`/`as`, Musashi,
+> Mock-Ollama). Der Orchestrator wurde noch nicht mit einem echten Modell ausprobiert; es fehlen außerdem Stubs für
+> Amiga-Bibliotheksaufrufe ([Roadmap](docs/roadmap.md)).
 
 ## Was es heute gibt
 
@@ -63,9 +64,15 @@ kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen geteste
   kopieren/suchen, **Zeilen assemblieren**, Register, Einzelschritt/Step over/bis Rückkehr/laufen, Haltepunkte und Watchpoints,
   Symbole, Dateien (Quelltext, Raw, S-Record, Hunk), Checkpoints, Snapshots, Interrupts, Amiga-Speicherkarte
 
+**Orchestrator** (`agent/m68k_annotate.py`, [docs/reverse-engineering.md](docs/reverse-engineering.md))
+- lässt ein lokales Modell über **Ollama** ein Programm Routine für Routine (von den Blättern zur Wurzel) analysieren: lesen, im Emulator
+  **ausprobieren**, benennen und kommentieren; mehrere Modelle nacheinander (schnell zuerst, gründlich für die Lücken), Vollständigkeits-
+  prüfung, Projektdatei zum Abbrechen/Fortsetzen, Bericht; Ergebnis ist das **verifizierte** Listing. Nur Python-Standardbibliothek.
+
 ## Geplant
 
-- **Orchestrator für ein lokales LLM** (Ollama, nach dem Vorbild von `z80_annotate.py`); Stubs für Amiga-Bibliotheksaufrufe
+- Erprobung des Orchestrators mit einem echten Modell und Feinschliff von Prompt und Parametern
+- Stubs für Amiga-Bibliotheksaufrufe (`exec`/`dos`)
 - Amiga-Hunk-*Ausgabe* des Assemblers
 
 ## Schnellstart
@@ -131,7 +138,7 @@ L_001012:               ; <- $001000
 include/m68k/  öffentliche Header der Bibliothek (m68kcore)
 src/           Implementierung
 app/main.cpp   Kommandozeilenwerkzeug m68ktool
-agent/         (geplant) Orchestrator für Ollama
+agent/         Orchestrator für Ollama (Python, m68k_annotate.py)
 tests/         Unit-Tests (CTest)
 tools/         Entwicklerwerkzeuge (derzeit CI-Annotationen; später Kreuzprüfung)
 examples/      Beispielprogramm und Kommentardatei

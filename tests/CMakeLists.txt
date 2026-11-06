@@ -1,3 +1,10 @@
+# The orchestrator tests need Python 3 (standard library only) and the m68ktool binary.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+  add_test(NAME agent
+           COMMAND ${CMAKE_COMMAND} -E env "M68KTOOL=$<TARGET_FILE:m68ktool>" ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/agent)
+endif()
+
 # Each suite is one executable without an external test framework (see test_util.hpp).
 foreach(name format memory expression decoder assembler roundtrip image_io hunk disassembler cpu session reverse monitor)
   add_executable(test_${name} test_${name}.cpp)

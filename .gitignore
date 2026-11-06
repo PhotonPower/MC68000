@@ -21,3 +21,6 @@ CMakeUserPresets.json
 # local ROM images are never committed (copyright)
 /roms/
 *.rom
+
+__pycache__/
+*.pyc

@@ -7,6 +7,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Orchestrator** `agent/m68k_annotate.py` (Python, nur Standardbibliothek): lässt ein lokales Modell über Ollama ein Programm Routine für
+  Routine analysieren, im Emulator ausprobieren und annotieren (nach dem Vorbild von `z80_annotate.py`; ohne Bilder, mit Amiga-Prompt);
+  Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Projektdatei, Bericht, verifiziertes Listing. Tests `tests/agent/` gegen einen
+  scripteten Mock-Ollama und den echten `m68ktool serve` (in CTest, wenn Python vorhanden ist). **Nicht** mit einem echten Modell erprobt.
+- Protokoll: `routines` liefert `confidence`, `listing` liefert `instructions` und `user_comments`.
 - **Meilenstein 0.4:** `m68ktool monitor` – klassischer Maschinensprache-Monitor (`m68k::Monitor`, Zeilenschnittstelle ohne eigene
   Ein-/Ausgabe) mit Hex als Standard, Assemble-Modus, Lauf-/Debug-Befehlen, Symbolen, Dateibefehlen (Quelltext, Raw, S-Record,
   Hunk), Checkpoints, Snapshots, Interrupts und Amiga-Speicherkarte. Der Ausdrucksauswerter kennt dafür einen Hex-Standard.

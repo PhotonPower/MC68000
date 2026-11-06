@@ -6,15 +6,81 @@ mit Hilfe eines lokalen Modells (z. B. über Ollama). Das Vorbild ist das
 [Z80-Projekt](https://github.com/PhotonPower/Z80/blob/main/docs/reverse-engineering.md).
 
 ```
-   Modell (Ollama)  <---- Tool-Aufrufe ---->  Orchestrator (Python, geplant)  <---- JSON-Zeilen ---->  m68ktool serve
-   liest, testet, benennt                                                                              Emulator, Analyse,
-                                                                                                       Annotationen, Listing
+   Modell (Ollama)  <---- Tool-Aufrufe ---->  agent/m68k_annotate.py  <---- JSON-Zeilen ---->  m68ktool serve
+   liest, testet, benennt                          (Python, nur stdlib)                          Emulator, Analyse,
+                                                                                                 Annotationen, Listing
 ```
 
-> **Stand:** Die Seite von `m68ktool serve` ist fertig und getestet: Codefluss-Analyse, Routinen und Aufrufgraph,
-> Annotationen, verifiziertes Listing, dazu der Emulator zum **Ausprobieren** von Routinen. Der **Orchestrator**
-> (Python-Skript, das ein Modell über Ollama anbindet) ist noch **nicht** geschrieben; bis dahin lassen sich die Befehle
-> von Hand oder aus einem eigenen Skript benutzen ([agent-protocol.md](agent-protocol.md)).
+> **Stand:** Beide Seiten sind fertig: `m68ktool serve` (Codefluss-Analyse, Routinen und Aufrufgraph, Annotationen, verifiziertes
+> Listing, Emulator zum **Ausprobieren** von Routinen) und der **Orchestrator** `agent/m68k_annotate.py`. Der Orchestrator ist gegen einen
+> **scripteten Mock-Ollama** und den echten `m68ktool serve` getestet (`tests/agent/`), aber **noch nicht mit einem echten Modell
+> ausprobiert**: Prompt und Parameter brauchen vermutlich Feinschliff (wie beim Z80-Vorbild).
+
+## Was das Modell kann – und was nicht
+
+| Werkzeug | Zweck |
+|---|---|
+| `get_listing`, `disassemble`, `read_memory` | ansehen |
+| `run_routine` | Routine im Emulator wie eine Funktion aufrufen (Register/Speicher vorgeben); Ergebnis: Register, geänderter Speicher (Stapel ausgenommen), Schreibzugriffe auf Custom-/CIA-Register (getrennt nach „von der Routine selbst“ und „von aufgerufenem Code“), Ausnahmen (z. B. Adressfehler durch einen nicht gesetzten Zeiger) |
+| `reset_machine` | Ausgangszustand wiederherstellen (sonst geschieht das nach jedem `run_routine` automatisch) |
+| `name_label`, `document_routine`, `name_variable`, `mark_data`, `add_comment` | **Namen und Kommentare** festhalten |
+| `finish_routine` | Routine abschließen |
+
+Das Modell **kann den Code nicht verändern** (siehe unten). Jedes Experiment läuft auf einem Checkpoint (`baseline`) und wird danach
+zurückgerollt; die geladene Datei bleibt unberührt. Es gibt **keine Bilder**: ein Modell sieht nur Text (Speicher, Register, Protokolle).
+
+## Benutzung
+
+```sh
+python3 agent/m68k_annotate.py --hunk programm --project programm.m68kproj.json --out programm_kommentiert.s \
+        --lang Deutsch --model qwen3:8b-instruct --log programm.log.jsonl
+```
+
+Voraussetzungen: gebautes `m68ktool` (wird in `build/` gesucht, sonst `--m68ktool`), Python ≥ 3.9 (nur Standardbibliothek), ein Ollama-Server
+mit einem Modell, das **Tool-Aufrufe** kann (Fähigkeiten erkennt das Skript über `/api/show`; ein Modell ohne Tools wird abgelehnt).
+
+| Option | Bedeutung |
+|---|---|
+| `--hunk DATEI [--hunk-base ADR]` / `--bin DATEI --org ADR` / `--srec DATEI` | Eingabe (Hunk wird relokiert, Standard `0x20000`) |
+| `--machine amiga500\|generic`, `--chip-kb`, `--rom DATEI` | Speicherkarte ([amiga500.md](amiga500.md)); ein Kickstart-ROM ist optional (eigene Kopie) |
+| `--entry ADR` (mehrfach) | Einsprungpunkte (Standard: Anfang des Programms) |
+| `--project DATEI` | Annotationen; wird geladen, falls vorhanden, und nach **jeder Routine** gespeichert → Abbrechen und Fortsetzen ist möglich |
+| `--out DATEI` | fertiges, verifiziertes Listing |
+| `--only ADR` | nur diese Routine bearbeiten (zum Ausprobieren) |
+| `--model`, `--host`, `--think true\|false`, `--num-ctx`, `--max-tokens`, `--max-turns`, `--temperature` | Modell und Grenzen |
+| `--lang` | Sprache der Kommentare |
+| `--log DATEI` | jede Modellnachricht und jedes Tool-Ergebnis (JSON-Zeilen), zum Nachvollziehen |
+
+Rückgabewert: `0`, wenn das Listing verifiziert ist; `1`, wenn nicht; `2` bei Konfigurations- und Verbindungsproblemen (Modell ohne
+Tools, Server nicht erreichbar, Modell nicht gefunden).
+
+**Ablauf:** Analyse ab den Einsprungpunkten → Routinen **von den Blättern zur Wurzel** (zuerst, was nichts Undokumentiertes aufruft) →
+je Routine eine eigene Unterhaltung mit dem Listing, den Namen der bereits dokumentierten Aufgerufenen und den Werkzeugen → Annotationen
+speichern → am Ende das verifizierte Listing. Eine zweite Ausführung mit demselben `--project` fragt das Modell nur noch nach noch
+offenen Routinen.
+
+**Vollständigkeitsprüfung:** Beim ersten `finish_routine` prüft der Orchestrator die Routine: noch unbenannte Platzhalter (`loc_…`,
+`sub_…`, `data_…`), ohne Namen benutzte absolute Speicherstellen (`$2200.W`; Hardware-Register zählen nicht) und zu wenige Kommentare
+(etwa einer je 10 Befehle) werden dem Modell aufgelistet. Ein zweiter Aufruf gilt immer als endgültig, das Modell kann also nie
+festhängen.
+
+### Mehrere Durchgänge
+
+Wie im Z80-Projekt lassen sich **mehrere Modelle nacheinander** einsetzen: ein schnelles Instruct-Modell für alles, danach ein
+gründlicheres Modell (`--refine-model`, beliebig oft) nur für die Routinen mit **gemessenen** Lücken (nicht dokumentiert, Platzhalter,
+unbenannte Speicherstellen, zu wenige Kommentare oder vom Modell selbst als `confidence: low` markiert). Die Vorgänger-Annotationen
+gelten dabei als Hypothesen eines Kollegen, die geprüft und überschrieben werden. `--refine-all`, `--refine-medium`, `--refine-think`,
+`--refine-max-tokens`, `--refine-max-turns` und `--report DATEI` (die verbleibenden Lücken je Routine) verhalten sich wie dort beschrieben.
+
+**Was `gaps left: 0` bedeutet:** Der Bericht misst *Vollständigkeit*, nicht *Richtigkeit*. Kleine Modelle schreiben fast immer
+`confidence: high`; wichtige Routinen kannst du mit `--refine-all` von einem größeren Modell gegenlesen lassen.
+
+### Robustheit gegen Modelle
+
+Getestet gegen Mock-Szenarien: Tool-Aufrufe als Text (`<tool_call>…`), Argumente als JSON-String, falsche Typen und unbekannte Argumente
+(werden korrigiert bzw. gemeldet), von Ollama nicht lesbare Aufrufe (Hinweis „Adressen als Strings“), abgeschnittene Antworten (das
+Limit wächst automatisch), Modelle ohne Thinking-Modus, ein Serverfehler bei einer Routine (sie wird übersprungen, der Lauf geht weiter;
+erst drei in Folge brechen ab), Modelle, die ohne `finish_routine` aufhören („partial“).
 
 ## Das Prinzip: das Modell kann den Code nicht verändern
 
@@ -83,9 +149,7 @@ Begründung abgelehnt. `machine` verwirft die Annotationen zusammen mit allem an
 
 ## Was noch fehlt
 
-- **Der Orchestrator** (`agent/m68k_annotate.py`, nur Standardbibliothek): Modell über Ollama, Werkzeuge `run_routine`
-  (`checkpoint` + `call` + `diff` + `io` + `rollback`), Mehrdurchgang-Verfahren, Vollständigkeitsprüfung und Bericht wie im
-  Z80-Projekt. Das Verfahren ist dort beschrieben und lässt sich übernehmen.
+- **Erprobung mit einem echten Modell** und der Feinschliff von Prompt und Parametern; bisher nur gegen einen Mock getestet.
 - **Amiga-Bibliotheksaufrufe**: ExecBase, `A6` und Stubs für `exec`/`dos`; ohne sie laufen Programme bis zum ersten
   Bibliotheksaufruf ([amiga500.md](amiga500.md)).
 - **Bildschirm**: keine Darstellung der Bitplanes; das Modell sieht nur Speicher und Registerprotokolle (Entscheidung, siehe Roadmap).

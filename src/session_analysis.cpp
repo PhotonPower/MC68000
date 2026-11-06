@@ -106,10 +106,12 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         };
         Json out = Json::array();
         for (const RoutineInfo& r : list) {
-            const bool documented = ann.routineAt(r.entry) != nullptr;
+            const RoutineDoc* doc = ann.routineAt(r.entry);
+            const bool documented = doc != nullptr;
             if (onlyUndocumented && documented) continue;
             Json e = Json::object();
             e.set("addr", hexAddrS(r.entry)).set("name", nameOf(r.entry)).set("documented", documented);
+            e.set("confidence", doc ? doc->confidence : std::string());
             e.set("start", hexAddrS(r.start)).set("end", hexAddrS(r.end));
             e.set("instructions", r.instructions).set("bytes", r.bytes).set("depth", r.depth);
             Json callers = Json::array();
@@ -152,6 +154,7 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         const ListingResult r = renderListing(*s.analysisView_, an, ann, lo);
         Json j = Json::object();
         j.set("listing", r.text).set("verified", r.verified).set("truncated", r.truncated).set("unnamed", r.unnamed);
+        j.set("instructions", r.instructions).set("user_comments", r.userComments);
         if (!r.problem.empty()) j.set("problem", r.problem);
         return j;
     }

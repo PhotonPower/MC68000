@@ -290,6 +290,8 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                 }
             }
             body << withComment("        " + text, comment) << "\n";
+            ++result.instructions;
+            if (ann.commentAt(a)) ++result.userComments;
             a += static_cast<Address>(in.length());
             continue;
         }

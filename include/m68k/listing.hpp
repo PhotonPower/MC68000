@@ -24,6 +24,8 @@ struct ListingResult {
     bool truncated = false;
     std::string problem;        ///< why verification failed
     unsigned unnamed = 0;       ///< generated placeholder labels (sub_/loc_/data_) that still await a real name
+    unsigned instructions = 0;  ///< instruction lines in the listing
+    unsigned userComments = 0;  ///< instruction lines that carry a comment from the annotations
 };
 
 /// Writes an assembler listing of a range: instructions from the analysis (with names and comments

@@ -5,10 +5,10 @@
 
 ## Wo wir stehen
 
-**Version 0.4:** Dekoder, Assembler, Disassembler, Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`), Amiga-500-Speicherkarte,
+**Version 0.5:** Dekoder, Assembler, Disassembler, Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`), Amiga-500-Speicherkarte,
 Monitor (`m68ktool monitor`) und die Reverse-Engineering-Werkzeuge (Analyse, Annotationen, verifiziertes Listing) sind fertig und gegen
-GNU binutils bzw. Musashi kreuzgeprüft ([testing.md](testing.md)). Offen sind vor allem der **Orchestrator** für ein lokales LLM und
-Stubs für Amiga-Bibliotheksaufrufe.
+GNU binutils bzw. Musashi kreuzgeprüft ([testing.md](testing.md)). Dazu kommt der Orchestrator für ein lokales LLM (nur gegen einen Mock getestet). Offen sind vor allem seine Erprobung mit einem echten
+Modell und Stubs für Amiga-Bibliotheksaufrufe.
 
 ## Meilenstein 0.2 – Dekoder, Assembler, Disassembler (erledigt)
 
@@ -50,16 +50,16 @@ Offen (Ideen):
 - Vorwärtsreferenzen beim zeilenweisen Assemblieren (Fixups, die bei der Definition nachgetragen werden)
 - Textoberfläche (TUI) mit Registern, Disassembly und Speicher gleichzeitig
 
-## Meilenstein 0.5 – Reverse Engineering (Werkzeuge fertig, Orchestrator offen)
+## Meilenstein 0.5 – Reverse Engineering (erledigt, Erprobung offen)
 
 Erledigt ([reverse-engineering.md](reverse-engineering.md)): Annotationen (Namen, Dokumentation, Variablen, Datenbereiche, Kommentare,
 Projektdatei), Codefluss-Analyse mit Routinen/Aufrufgraph/Bibliotheksaufrufen, **verifiziertes** Listing (neu assembliert und
-verglichen), die Protokollbefehle `analyze`, `routines`, `listing`, `ann_*`.
+verglichen), die Protokollbefehle `analyze`, `routines`, `listing`, `ann_*` und der **Orchestrator** `agent/m68k_annotate.py`
+(Ollama, Routinen von unten nach oben, Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Bericht), getestet gegen einen scripteten
+Mock-Ollama.
 
 Offen:
-- **Orchestrator** `agent/m68k_annotate.py` (Python, Ollama) nach dem Vorbild von `z80_annotate.py`: Werkzeuge `run_routine` (aus
-  `checkpoint`/`call`/`diff`/`io`/`rollback`), Routinen von unten nach oben, Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Bericht;
-  getestet gegen einen Mock-Ollama
+- **Erprobung mit einem echten Modell** (bisher nur Mock) und Feinschliff von Prompt und Parametern
 - Stubs für Amiga-Bibliotheksaufrufe (`exec`, `dos`) samt ExecBase und `A6`
 - Erkennung von Sprungtabellen und Datentypen
 
