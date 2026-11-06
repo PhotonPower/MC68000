@@ -594,6 +594,9 @@ MC68000 / Amiga facts that are easy to get wrong:
   $0RGB. The CIAs sit at $BFxxxx. Chip RAM starts at address 0 (512 KB on an A500). The emulator only REMEMBERS what is written to
   the custom chips and CIAs; it does not emulate them, so do not expect values to change by themselves.
 
+The listing may contain "jump table" comments: the analysis found a table behind an indexed jump (branch table, or words that are offsets from a base address). Its
+entries are handlers, not routines that anybody calls: describe what each case does and name the case labels (name_label), and document the table as a data region.
+
 Do not finish early. Before finish_routine: give EVERY label a name (loops, branch targets still called loc_/sub_/data_), name every
 memory location the code uses (name_variable, with a comment on its meaning), mark tables and strings (mark_data) and add a short comment
 (add_comment) to every non-obvious step. finish_routine checks this once and tells you what is missing.
@@ -669,8 +672,28 @@ class Annotator:
             self.say("project loaded")
         entries = a.entry or ([a.org] if a.bin else [s.ok(cmd="regs")["regs"]["PC"]])
         r = s.ok(cmd="analyze", entries=entries, reset=True)
-        self.say(f'analysed {r["instructions"]} instructions, {r["from"]}-{r["to"]}, {r["routines"]} routines')
+        self.say(f'analysed {r["instructions"]} instructions, {r["from"]}-{r["to"]}, {r["routines"]} routines'
+                 + (f', {r["jump_tables"]} jump tables' if r.get("jump_tables") else ""))
+        if not a.no_auto_tables:
+            self.follow_pointer_tables(entries)
         s.ok(cmd="checkpoint", name="baseline")
+
+    def follow_pointer_tables(self, entries):
+        """Tables of code addresses that the analysis only suggests (it found longwords that look like addresses of code behind a data
+        reference) are marked as pointer tables and followed, so that their handlers are analysed as routines. Marking only adds a name and
+        a display form; a false positive costs nothing but a few extra routines."""
+        s = self.s
+        for _ in range(3):  # following one table can reveal another
+            tables = [t for t in s.ok(cmd="jump_tables", max_entries=1)["tables"] if not t["followed"]]
+            marked = 0
+            for t in tables:
+                name = f'jump_table_{int(t["table"], 16):06x}'
+                if s.call(cmd="ann_data", addr=t["table"], length=t["bytes"], kind="pointers", name=name).get("ok"):
+                    marked += 1
+            if not marked:
+                break
+            r = s.ok(cmd="analyze", entries=entries, reset=True)
+            self.say(f'{marked} pointer table(s) followed: now {r["routines"]} routines')
 
     # ---- one routine ----
     @staticmethod
@@ -918,6 +941,7 @@ def main(argv=None):
     p.add_argument("--hunk-base", default="0x20000", help="load address of --hunk")
     p.add_argument("--machine", choices=["amiga500", "generic"], default="amiga500", help="memory map (amiga500: chip RAM, custom/CIA registers, ROM)")
     p.add_argument("--chip-kb", type=int, default=512, help="chip RAM of the amiga500 machine")
+    p.add_argument("--no-auto-tables", action="store_true", help="do not mark and follow tables of code addresses that the analysis only suggests")
     p.add_argument("--no-os", action="store_true", help="do not emulate exec/dos library calls (they then run into unmapped memory)")
     p.add_argument("--rom", help="Kickstart ROM image (amiga500 only; your own copy, it is not part of this project)")
     p.add_argument("--entry", action="append", help='entry point (repeatable), default: the start of the program, e.g. "0x20000"')

@@ -125,8 +125,15 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         if (comment.empty()) return line;
         return pad(line, 44) + "  ; " + oneLine(comment);
     };
+    // jump tables found by the analysis: offset tables are shown as words with their targets, branch tables get a comment
+    std::map<Address, const JumpTable*> offsetTables, branchTables;
+    for (const JumpTable& jt : analysis.jumpTables()) {
+        if (!jt.followed) continue;
+        if (jt.kind == JumpTable::Kind::Offset) offsetTables[jt.table] = &jt;
+        else if (jt.kind == JumpTable::Kind::Branch) branchTables[jt.table] = &jt;
+    }
     auto isBoundary = [&](Address b) {
-        return b >= to || names.count(b) || analysis.at(b) || ann.dataAt(b) || ann.variableAt(b);
+        return b >= to || names.count(b) || analysis.at(b) || ann.dataAt(b) || ann.variableAt(b) || offsetTables.count(b);
     };
 
     auto dcBytes = [&](Address a, std::size_t n) {
@@ -271,7 +278,23 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             continue;
         }
 
+        if (const auto jt = offsetTables.find(a); jt != offsetTables.end() && !ann.dataCovering(a) && a + jt->second->bytes <= to) {
+            const JumpTable& t = *jt->second;
+            std::ostringstream note;
+            note << "jump table of the jump at " << hexv(t.jump, 6) << ": target = " << hexv(t.base, 6) << " + signed word";
+            emitComment(note.str());
+            for (std::size_t i = 0; i < t.slots.size(); ++i) {
+                if (i > 0 && names.count(t.slots[i])) emitHeader(t.slots[i]);
+                const std::string name = symbolize(t.targets[i]);
+                body << withComment("        DC.W     " + hexv(view.read16(t.slots[i]), 4), "-> " + (name.empty() ? hexv(t.targets[i], 6) : name)) << "\n";
+            }
+            a += t.bytes;
+            continue;
+        }
+
         if (analysis.at(a)) {
+            if (const auto jt = branchTables.find(a); jt != branchTables.end())
+                emitComment("jump table of the jump at " + hexv(jt->second->jump, 6) + ": " + std::to_string(jt->second->slots.size()) + " branch entries");
             const Instruction in = decode(view, a, dopt);
             std::string text = in.operands.empty() ? in.mnemonic : pad(in.mnemonic, 8) + " " + in.operands;
             std::string comment;

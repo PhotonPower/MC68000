@@ -7,6 +7,9 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Erkennung von Sprungtabellen** in der Codefluss-Analyse: Branch-Tabellen (`JMP d(PC,Dn)` auf `BRA`-Folge) und Offset-Tabellen (`MOVE.W tab(PC,Dn),Dm` + `JMP base(PC,Dm)`) werden erkannt und
+  ihre Ziele als Code verfolgt, Zeigertabellen werden vorgeschlagen (`followed:false`) und nach `ann_data kind=pointers` verfolgt. Neuer Befehl `jump_tables`, Feld `jump_tables` in `analyze`,
+  Tabellenkommentare und `DC.W`-Zeilen mit Zielen im Listing, Orchestrator markiert Vorschläge selbst (`--no-auto-tables`). Test `jumptable` (5021 Prüfungen).
 - **Assembler-Optimierung** `-O` (`AssemblerOptions::optimize`, Protokoll `optimize`): `ADD`/`SUB #1..8` → `ADDQ`/`SUBQ`, `MOVE.L #-128..127,Dn` → `MOVEQ`, `.L` → `.W` für 16-Bit-Werte
   zu `An`; nur gewöhnliche Zahlen, Entscheidungen werden nie hin und her gedreht. Standardmäßig aus. Test `optimize` (11 721 Prüfungen, darunter 6000 zufällige Befehle:
   optimiert und nicht optimiert führen zum selben Zustand) und 12 Fälle gegen GNU `as`.

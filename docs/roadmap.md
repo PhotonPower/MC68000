@@ -61,9 +61,11 @@ verglichen), die Protokollbefehle `analyze`, `routines`, `listing`, `ann_*` und 
 (Ollama, Routinen von unten nach oben, Mehrdurchgang-Verfahren, Vollständigkeitsprüfung, Bericht), getestet gegen einen scripteten
 Mock-Ollama.
 
+Sprungtabellen (Branch- und Offset-Tabellen automatisch, Zeigertabellen als Vorschlag) erkennt die Analyse seit 0.5 ([reverse-engineering.md](reverse-engineering.md#sprungtabellen)).
+
 Offen:
 - **Erprobung mit einem echten Modell** (bisher nur Mock) und Feinschliff von Prompt und Parametern
-- Erkennung von Sprungtabellen und Datentypen
+- Erkennung von Datentypen (Text, Strukturtabellen)
 
 ## Danach (Ideen)
 

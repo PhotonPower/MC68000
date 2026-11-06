@@ -370,6 +370,60 @@ class LibraryCallReportTest(unittest.TestCase):
             self.assertIn("NOT emulated", "\n".join(mock.system_prompts))
 
 
+TABLEDEMO = """\
+        ORG $1000
+callit: LEA     ptab(PC),A0
+        MOVEA.L (A0,D0.W),A1
+        JSR     (A1)
+        RTS
+ptab:   DC.L    p0,p1,p2
+p0:     MOVEQ   #20,D4
+        RTS
+p1:     MOVEQ   #21,D4
+        RTS
+p2:     MOVEQ   #22,D4
+        RTS
+"""
+
+
+class PointerTableTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(M68KTOOL):
+            raise unittest.SkipTest(f"m68ktool not found at {M68KTOOL} (set M68KTOOL)")
+
+    def run_demo(self, *extra):
+        d = tempfile.mkdtemp()
+        src, binary, project = os.path.join(d, "t.s"), os.path.join(d, "t.bin"), os.path.join(d, "t.proj.json")
+        with open(src, "w") as f:
+            f.write(TABLEDEMO)
+        r = subprocess.run([M68KTOOL, "asm", src, "-o", binary], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mock = MockOllama({})
+        url = mock.start()
+        try:
+            code, text = run_main(["--bin", binary, "--org", "0x1000", "--host", url, "--model", "mock", "--m68ktool", M68KTOOL,
+                                   "--project", project, "--max-turns", "2", *extra])
+        finally:
+            mock.stop()
+        return text, project
+
+    def test_suggested_pointer_table_is_followed(self):
+        text, project = self.run_demo()
+        self.assertIn("1 jump tables", text)
+        self.assertIn("1 pointer table(s) followed: now 4 routines", text)
+        with open(project, encoding="utf-8") as f:
+            data = json.load(f)
+        regions = data.get("data", [])
+        self.assertTrue(any(r.get("kind") == "pointers" and r.get("name", "").startswith("jump_table_") for r in regions), data)
+        self.assertIn("jump_table_00100c", json.dumps(data))
+
+    def test_can_be_switched_off(self):
+        text, _ = self.run_demo("--no-auto-tables")
+        self.assertNotIn("pointer table(s) followed", text)
+        self.assertIn("1 routines", text)
+
+
 class HelperTest(unittest.TestCase):
     def test_argument_coercion(self):
         c, notes = annotate.prepare_args("run_routine", {"addr": "0x1000", "max_instructions": "500", "keep_state": "true", "x": 1,

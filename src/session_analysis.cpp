@@ -25,7 +25,7 @@ std::string hexAddrS(Address a) {
 }  // namespace
 
 bool Session::Impl::isAnalysisCommand(const std::string& cmd) const {
-    static const char* names[] = {"analyze", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
+    static const char* names[] = {"analyze", "jump_tables", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
                                   "ann_comment", "ann_remove", "ann_title", "ann_list", "ann_save", "ann_load"};
     for (const char* n : names)
         if (cmd == n) return true;
@@ -74,6 +74,9 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         s.analysis_ = std::make_unique<Analysis>(*s.analysisView_, from, to);
         s.analysis_->setDataBarrier([&ann](Address a) { return ann.dataCovering(a) != nullptr; });
         for (const Address e : s.analysisEntries_) s.analysis_->addEntry(e);
+        // a region the user (or the model) marked as `pointers` is a table of code addresses: follow them
+        for (const auto& [ra, region] : ann.dataRegions())
+            if (region.kind == DataKind::Pointers) s.analysis_->addPointerTable(ra, region.length);
         s.analysis_->analyzeFlow();
         for (const auto& [lf, lt] : s.linearRanges_) s.analysis_->analyzeLinear(lf, lt);
         Json j = Json::object();
@@ -81,6 +84,7 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         j.set("code_bytes", s.analysis_->codeBytes()).set("range_bytes", to - from);
         j.set("instructions", s.analysis_->code().size());
         j.set("routines", s.analysis_->routines().size());
+        j.set("jump_tables", s.analysis_->jumpTables().size());
         Json entries = Json::array();
         for (const Address e : s.analysisEntries_) entries.push(hexAddrS(e));
         j.set("entries", entries);
@@ -91,6 +95,32 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         if (!s.analysis_) throw SessionError("no analysis yet: use 'analyze' first");
         return *s.analysis_;
     };
+
+    if (cmd == "jump_tables") {
+        const Analysis& an = needAnalysis();
+        const std::size_t maxEntries = arg("max_entries") ? static_cast<std::size_t>(number(*arg("max_entries"))) : 64;
+        Json arr = Json::array();
+        for (const JumpTable& t : an.jumpTables()) {
+            Json e = Json::object();
+            e.set("kind", t.kind == JumpTable::Kind::Branch ? "branch" : t.kind == JumpTable::Kind::Offset ? "offset" : "pointers");
+            if (t.jump) e.set("jump", hexAddrS(t.jump));
+            e.set("table", hexAddrS(t.table)).set("bytes", t.bytes).set("followed", t.followed);
+            if (t.kind == JumpTable::Kind::Offset) e.set("base", hexAddrS(t.base));
+            e.set("entry_count", t.slots.size());
+            Json entries = Json::array();
+            for (std::size_t i = 0; i < t.slots.size() && i < maxEntries; ++i) {
+                Json x = Json::object();
+                x.set("slot", hexAddrS(t.slots[i])).set("target", hexAddrS(t.targets[i]));
+                entries.push(x);
+            }
+            e.set("entries", entries);
+            if (!t.followed) e.set("hint", "looks like a table of code addresses; mark it with ann_data kind=pointers and analyze again to follow it");
+            arr.push(e);
+        }
+        Json j = Json::object();
+        j.set("tables", arr);
+        return j;
+    }
 
     if (cmd == "routines") {
         const Analysis& an = needAnalysis();

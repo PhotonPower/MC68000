@@ -96,6 +96,7 @@ Gesamtzähler seit dem letzten `reset`.
 | Befehl | Argumente | Wirkung / Antwort |
 |---|---|---|
 | `analyze` | `entries[]`, `from?`, `to?`, `linear?{from,to}`, `reset?` | Codefluss ab den Einstiegspunkten analysieren (Standard: der PC; Bereich: zuletzt geladen/assembliert, sonst `from`/`to` angeben); `linear` dekodiert zusätzlich einen Bereich der Reihe nach; `reset` vergisst frühere Einstiegspunkte. Antwort: `code_bytes`, `instructions`, `routines`. Nötig für `routines` und `listing`. |
+| `jump_tables` | `max_entries?` (64) | `tables:[{kind (branch/offset/pointers), jump?, table, bytes, base? (offset), followed, entry_count, entries:[{slot,target}], hint?}]` – Sprungtabellen der letzten Analyse; `followed:false` = nur vorgeschlagen (mit `ann_data kind=pointers` markieren und erneut `analyze`) |
 | `routines` | `order?` (`bottom_up`, `address`), `undocumented_only?` | Unterprogramme: `addr`, `name` (oder `sub_XXXXXX`), `documented`, `confidence`, `start`/`end`, `instructions`, `bytes`, `depth`, `callers`, `callees`, `external_calls`, `library_calls:[{addr,offset}]` |
 | `listing` | `from?`, `to?`, `verify?` (true), `max_chars?`, `addresses?` | kommentiertes, **neu assemblierbares** Listing; `verified` = neu assembliert, identische Bytes; `unnamed` = Platzhalter ohne echten Namen; `instructions` / `user_comments` = Befehlszeilen bzw. Zeilen mit Kommentar; `truncated` bei `max_chars` |
 | `ann_label` | `addr`, `name` | Namen vergeben; ungültige, reservierte, doppelte Namen werden mit Begründung abgewiesen |

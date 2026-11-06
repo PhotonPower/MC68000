@@ -161,7 +161,7 @@ Json Session::Impl::cmdHelp() {
         "help", "machine", "reset", "asm", "dis", "read", "write", "load_file", "load_rom", "regs", "set", "step", "step_over",
         "run", "run_until_return", "call", "break", "unbreak", "breaks", "clear_breaks", "watch", "unwatch", "checkpoint",
         "rollback", "drop", "checkpoints", "diff", "state", "set_state", "save_state", "load_state", "interrupt", "io", "libcalls", "console", "symbols",
-        "libcalls", "console", "analyze", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data", "ann_comment", "ann_remove",
+        "libcalls", "console", "analyze", "jump_tables", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data", "ann_comment", "ann_remove",
         "ann_title", "ann_list", "ann_save", "ann_load"};
     Json arr = Json::array();
     for (const char* n : names) arr.push(n);

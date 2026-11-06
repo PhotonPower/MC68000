@@ -147,10 +147,25 @@ das Modell in die Irre führen würden; der Offset selbst ist ein guter Hinweis,
 `data`, `comments`, `block_comments`, `title`). Eine fehlerhafte Datei (doppelte oder ungültige Namen, unbekannte Art) wird mit
 Begründung abgelehnt. `machine` verwirft die Annotationen zusammen mit allem anderen.
 
+## Sprungtabellen
+
+Die Codefluss-Analyse erkennt Tabellen hinter indizierten Sprüngen, damit ihre Ziele als Code analysiert werden (sonst blieben sie unentdeckt, weil niemand sie direkt aufruft):
+
+| Art | Muster | Behandlung |
+|---|---|---|
+| **Branch-Tabelle** (`branch`) | `JMP`/`JSR d(PC,Dn)` auf eine Folge von `BRA`- (oder `JMP abs.L`-)Befehlen | die Einträge sind Code, ihre Ziele werden verfolgt (mindestens zwei Einträge) |
+| **Offset-Tabelle** (`offset`) | `MOVE.W tab(PC,Dn),Dm` unmittelbar (höchstens ein Befehl dazwischen) vor `JMP`/`JSR base(PC,Dm)`: Wörter, Ziel = `base` + Wort mit Vorzeichen | die Wörter sind **Daten**, die Ziele werden verfolgt; die Tabelle endet am ersten ungültigen Ziel oder dort, wo das erste Ziel beginnt (mindestens zwei Einträge) |
+| **Zeigertabelle** (`pointers`) | Folge von Langwörtern (mindestens drei), die auf gültigen Code im Bereich zeigen, hinter einem Datenverweis (`LEA tab(PC),A0` …) | nur ein **Vorschlag** (`followed: false`): Zahlen, die wie Adressen aussehen, können auch Daten sein. Markiert man den Bereich mit `ann_data kind=pointers`, werden die Ziele beim nächsten `analyze` zu Einstiegspunkten (Routinen) |
+
+Die beiden ersten Muster hängen am Sprungbefehl selbst und sind daher zuverlässig; sie werden automatisch verfolgt. `jump_tables` zeigt alle Tabellen (Art, Sprungbefehl, Tabellenadresse, Basis, Einträge, `followed`).
+Im **Listing** steht vor einer Branch-Tabelle ein Kommentar, eine Offset-Tabelle erscheint als `DC.W`-Zeilen mit dem Ziel als Kommentar (`; -> loc_001034`) und einem Hinweis auf Sprungbefehl und Basis; das Listing wird wie immer neu assembliert und
+verglichen. Der **Orchestrator** markiert vorgeschlagene Zeigertabellen von selbst (`jump_table_<adresse>`) und analysiert neu (`--no-auto-tables` schaltet das ab); der Prompt weist das Modell an, die Fälle zu benennen.
+Nicht erkannt werden Tabellen, die über ein Adressregister indiziert werden (`MOVE.W (A0,D0.W),D0`) und Muster mit mehr als einer Zwischenanweisung; sie lassen sich von Hand mit `ann_data` und `ann_label` festhalten.
+
 ## Was noch fehlt
 
 - **Erprobung mit einem echten Modell** und der Feinschliff von Prompt und Parametern; bisher nur gegen einen Mock getestet.
 - **Mehr emulierte Bibliotheksfunktionen**: Nur wenige `exec`-/`dos`-Funktionen sind nachgebildet, der Rest wird protokolliert und liefert 0
   ([amiga500.md](amiga500.md)); Programme, die auf Ergebnisse anderer Bibliotheken (Grafik, Fenster) warten, nehmen ihren Fehlerpfad.
 - **Bildschirm**: keine Darstellung der Bitplanes; das Modell sieht nur Speicher und Registerprotokolle (Entscheidung, siehe Roadmap).
-- Erkennung von Sprungtabellen und Datentypen; derzeit hilft `ann_data` und der Hinweis auf Zeiger.
+- Erkennung von **Datentypen** (Text, Tabellen von Strukturen, Bitplanes); derzeit hilft `ann_data` und der Hinweis auf Zeiger.
