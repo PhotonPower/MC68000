@@ -61,7 +61,7 @@ Gesamtzähler seit dem letzten `reset`.
 
 | Befehl | Argumente | Wirkung / Antwort |
 |---|---|---|
-| `asm` | `source`, `origin?` (`0x1000`), `entry?` | Quelltext ([assembler-syntax.md](assembler-syntax.md)) assemblieren und in den Speicher schreiben. Marken werden für spätere Argumente merkbar und können im Quelltext wiederverwendet werden. `entry` setzt den PC. Antwort: `size`, `start`, `end`, `segments`, `symbols`. Bei Fehlern `ok:false` und `errors:[{line,message,source}]`; nichts wird geändert. |
+| `asm` | `source`, `origin?` (`0x1000`), `entry?`, `optimize?` (false: kürzere gleichwertige Formen, siehe assembler-syntax.md) | Quelltext ([assembler-syntax.md](assembler-syntax.md)) assemblieren und in den Speicher schreiben. Marken werden für spätere Argumente merkbar und können im Quelltext wiederverwendet werden. `entry` setzt den PC. Antwort: `size`, `start`, `end`, `segments`, `symbols`. Bei Fehlern `ok:false` und `errors:[{line,message,source}]`; nichts wird geändert. |
 | `dis` | `addr?` (PC), `count?` (8) | disassemblieren → `lines:[{addr,label?,bytes,text,target?}]` (Marken statt Adressen; `target` bei Sprüngen) |
 | `read` | `addr`, `len?` (16, höchstens 4096) | `hex`, `ascii` – so, wie der Prozessor den Speicher sieht (ROM, Overlay, Geräteregister) |
 | `write` | `addr`, `hex` oder `bytes[]` | Speicher schreiben; ROM und „unmapped“ werden abgelehnt |

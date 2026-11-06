@@ -138,11 +138,29 @@ CASES = [
 ]
 
 
+# Cases for `m68ktool asm -O` (the optimisations GNU as does by default). Not listed: `ADD.W #9,D1`, where GNU chooses ADDI
+# (same length, same result) and this assembler keeps the ADD form.
+CASES_OPT = [
+    ("MOVE.L #5,D0", "move.l #5,%d0"),
+    ("MOVE.L #-1,D3", "move.l #-1,%d3"),
+    ("MOVE.L #127,D7", "move.l #127,%d7"),
+    ("MOVE.L #128,D0", "move.l #128,%d0"),
+    ("ADD.W #3,D1", "add.w #3,%d1"),
+    ("ADD.L #8,D2", "add.l #8,%d2"),
+    ("SUB.W #1,D0", "sub.w #1,%d0"),
+    ("SUB.L #4,(A0)", "sub.l #4,%a0@"),
+    ("ADD.B #2,D2", "add.b #2,%d2"),
+    ("ADD.L #3,A1", "add.l #3,%a1"),
+    ("SUB.L #8,A0", "sub.l #8,%a0"),
+    ("ADD.W #5,$2000.W", "add.w #5,0x2000:w"),
+]
+
+
 def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
-def ours(tool, src, tmp):
+def ours(tool, src, tmp, extra=()):
     path = os.path.join(tmp, "a.s")
     out = os.path.join(tmp, "a.bin")
     # labels must start in column 1, instructions are indented
@@ -150,7 +168,7 @@ def ours(tool, src, tmp):
     for ln in src.split("\n"):
         lines.append(ln if ":" in ln.split(" ")[0] else "  " + ln)
     open(path, "w").write("\n".join(lines) + "\n")
-    r = run([tool, "asm", path, "-o", out])
+    r = run([tool, "asm", path, "-o", out, *extra])
     if r.returncode != 0:
         return None, r.stderr.strip()
     return open(out, "rb").read(), ""
@@ -180,7 +198,15 @@ def main():
                 print(f"MISMATCH: {mine!r}")
                 print(f"   ours: {a.hex() if a is not None else 'ERROR ' + ea}")
                 print(f"   gas:  {b.hex() if b is not None else 'ERROR ' + eb}")
-    print(f"{len(CASES)} cases, {bad} mismatches")
+        for mine, theirs in CASES_OPT:
+            a, ea = ours(tool, mine, tmp, ("-O",))
+            b, eb = gas(theirs, tmp)
+            if a is None or b is None or a != b:
+                bad += 1
+                print(f"MISMATCH (-O): {mine!r}")
+                print(f"   ours: {a.hex() if a is not None else 'ERROR ' + ea}")
+                print(f"   gas:  {b.hex() if b is not None else 'ERROR ' + eb}")
+    print(f"{len(CASES)} cases, {len(CASES_OPT)} with -O, {bad} mismatches")
     sys.exit(1 if bad else 0)
 
 

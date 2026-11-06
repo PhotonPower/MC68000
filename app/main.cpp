@@ -59,6 +59,7 @@ void printUsage(std::ostream& out) {
         << "  -l <file|->      write a listing ('-' = standard output)\n"
         << "  -s <file|->      write the symbol table\n"
         << "  --org <addr>     start address before the first ORG (default 0)\n"
+        << "  -O, --optimize   shorter equivalent forms (ADD/SUB #1..8 -> ADDQ/SUBQ, MOVE.L #imm8,Dn -> MOVEQ, .L -> .W for 16-bit values to An)\n"
         << "  --hunk <file>    write an AmigaDOS load file (programs with SECTION directives; default <source>.hunk)\n"
         << "  --hunk-symbols   put every label into the hunk symbol table (not only XDEF ones)\n"
         << "  (without -o/--srec the result is written to <source>.bin)\n"
@@ -121,6 +122,7 @@ int cmdAsm(Args args) {
         if (a == "-o") outBin = args.value(a);
         else if (a == "--hunk") outHunk = args.value(a);
         else if (a == "--hunk-symbols") opt.exportAllSymbols = true;
+        else if (a == "-O" || a == "--optimize") opt.optimize = true;
         else if (a == "--srec") outSrec = args.value(a);
         else if (a == "-l") outList = args.value(a);
         else if (a == "-s") outSyms = args.value(a);

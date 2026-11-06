@@ -225,6 +225,7 @@ Json Session::Impl::cmdAsm() {
     AssemblerOptions opt;
     opt.origin = address("origin", 0x1000);
     opt.predefined = s.symbols_;
+    opt.optimize = flag("optimize");
     const AssemblyResult r = assemble(source, opt);
     if (r.ok() && r.hunk)
         throw SessionError("a program with SECTIONs is relocatable: assemble it to a hunk file with 'm68ktool asm --hunk' and load it with load_file");

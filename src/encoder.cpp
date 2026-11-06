@@ -402,7 +402,7 @@ bool encodeEa(Ctx& c, const Parsed& p, Size size, unsigned allowed, bool noAnByt
             if (p.kind == K::AbsAuto) {
                 if (!(allowed & kAbsW)) useLong = true;
                 else if (!(allowed & kAbsL)) useLong = false;
-                else if (c.req.hint >= 1 || relocatable || (!v.undefined && !fitsSigned(v.value, 16))) useLong = true;
+                else if ((c.req.hint & 1) || relocatable || (!v.undefined && !fitsSigned(v.value, 16))) useLong = true;
                 if (useLong) c.level = 1;
             }
             if (relocatable && !useLong) {
@@ -618,8 +618,8 @@ EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<
                 bool shortForm;
                 if (us == 'S' || us == 'B') shortForm = true;
                 else if (us == 'W') shortForm = false;
-                else if (v.undefined) shortForm = req.hint == 0;
-                else shortForm = req.hint == 0 && disp >= -128 && disp <= 127 && disp != 0;
+                else if (v.undefined) shortForm = (req.hint & 1) == 0;
+                else shortForm = (req.hint & 1) == 0 && disp >= -128 && disp <= 127 && disp != 0;
                 if (!v.undefined) {
                     if (v.value & 1) return fail("branch target at odd address");
                     if (shortForm && (disp < -128 || disp > 127 || disp == 0)) return fail("branch too far for .S");
@@ -658,7 +658,7 @@ EncodeResult tryForm(const Form& f, const EncodeRequest& req, const std::vector<
 
     r.ok = true;
     r.relocs = c.relocs;
-    r.level = std::max(c.level, req.hint);
+    r.level = c.level | req.hint;
     r.bytes.push_back(static_cast<Byte>(op >> 8));
     r.bytes.push_back(static_cast<Byte>(op));
     for (const Word w : c.ext) {
@@ -706,7 +706,7 @@ bool isMnemonic(const std::string& name) {
     return false;
 }
 
-EncodeResult encodeInstruction(const EncodeRequest& request, const ValueFn& value) {
+EncodeResult encodeOne(const EncodeRequest& request, const ValueFn& value) {
     EncodeResult fail;
     const std::string name = canonicalName(upper(request.mnemonic));
 
@@ -749,6 +749,86 @@ EncodeResult encodeInstruction(const EncodeRequest& request, const ValueFn& valu
     }
     fail.error = bestError.empty() ? "invalid operands" : bestError;
     return fail;
+}
+
+
+// ---- optional size optimisations (AssemblerOptions::optimize) ---------------------------------------------------------
+//   ADD/SUB #1..8,<ea>              -> ADDQ/SUBQ          (same flags; also for address registers, where neither sets flags)
+//   MOVE.L #-128..127,Dn            -> MOVEQ              (same flags)
+//   ADD/SUB/MOVE/CMP(A).L #x,An     -> .W form            (x fits 16 bits; the word operand is sign-extended: same result, no flags for ADDA/SUBA/MOVEA,
+//                                                          CMPA compares the sign-extended value)
+// Only plain numbers are optimised (no symbols that are still undefined, no section-relative addresses). A decision is
+// never reversed: a hint bit remembers that an instruction was optimised and another one that it must not be any more,
+// so repeated passes cannot oscillate.
+namespace {
+
+std::string trimmed(const std::string& t) {
+    const std::size_t a = t.find_first_not_of(" \t");
+    if (a == std::string::npos) return "";
+    return t.substr(a, t.find_last_not_of(" \t") - a + 1);
+}
+bool isDataRegister(const std::string& t) {
+    const std::string u = upper(trimmed(t));
+    return u.size() == 2 && u[0] == 'D' && u[1] >= '0' && u[1] <= '7';
+}
+bool isAddressRegister(const std::string& t) {
+    const std::string u = upper(trimmed(t));
+    return u == "SP" || (u.size() == 2 && u[0] == 'A' && u[1] >= '0' && u[1] <= '7');
+}
+
+constexpr int kHintOptimized = 2, kHintVetoed = 4;
+
+bool optimizedRequest(const EncodeRequest& rq, const ValueFn& value, EncodeRequest& out) {
+    if (rq.operands.size() != 2) return false;
+    const std::string src = trimmed(rq.operands[0]);
+    if (src.size() < 2 || src[0] != '#') return false;
+    const std::string name = upper(rq.mnemonic);
+    const char size = rq.size;
+    if (size == 'S') return false;
+    const EncodeValue v = value(src.substr(1));
+    if (!v.error.empty() || v.undefined || sectionTag(v.value) != 0) return false;
+    const std::int64_t x = v.value;
+    out = rq;
+    const bool anyAddSub = name == "ADD" || name == "SUB" || name == "ADDA" || name == "SUBA";
+    if (anyAddSub && x >= 1 && x <= 8 && size != 'B') {
+        out.mnemonic = (name == "ADD" || name == "ADDA") ? "ADDQ" : "SUBQ";
+        return true;
+    }
+    if ((name == "ADD" || name == "SUB") && x >= 1 && x <= 8 && !isAddressRegister(rq.operands[1])) {   // byte size: not for An
+        out.mnemonic = name == "ADD" ? "ADDQ" : "SUBQ";
+        return true;
+    }
+    if (name == "MOVE" && size == 'L' && isDataRegister(rq.operands[1]) && x >= -128 && x <= 127) {
+        out.mnemonic = "MOVEQ";
+        out.size = 0;
+        return true;
+    }
+    const bool wordable = name == "ADD" || name == "SUB" || name == "ADDA" || name == "SUBA" || name == "MOVE" || name == "MOVEA" || name == "CMP" || name == "CMPA";
+    if (wordable && size == 'L' && isAddressRegister(rq.operands[1]) && x >= -32768 && x <= 32767) {
+        out.size = 'W';
+        return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+EncodeResult encodeInstruction(const EncodeRequest& request, const ValueFn& value) {
+    if (!request.optimize) return encodeOne(request, value);
+    const bool vetoed = (request.hint & kHintVetoed) != 0, before = (request.hint & kHintOptimized) != 0;
+    if (!vetoed) {
+        EncodeRequest alt;
+        if (optimizedRequest(request, value, alt)) {
+            EncodeResult r = encodeOne(alt, value);
+            if (r.ok) {
+                r.level |= kHintOptimized;
+                return r;
+            }
+        }
+    }
+    EncodeResult r = encodeOne(request, value);
+    if (r.ok && before && !vetoed) r.level |= kHintVetoed;   // optimised in an earlier pass, not possible any more: never try again
+    return r;
 }
 
 }  // namespace m68k

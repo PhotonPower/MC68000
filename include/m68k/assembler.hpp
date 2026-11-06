@@ -13,6 +13,9 @@ namespace m68k {
 struct AssemblerOptions {
     Address origin = 0;                                  ///< start address before the first ORG
     std::map<std::string, std::int64_t> predefined;      ///< symbols defined before assembly
+    /// Shorter equivalent forms (never changes registers, flags or memory): `ADD/SUB #1..8` -> ADDQ/SUBQ, `MOVE.L #-128..127,Dn` -> MOVEQ,
+    /// `ADD/SUB/MOVE/CMP.L #x,An` with x in 16 bits -> `.W` form. Off by default so that source and output stay one-to-one.
+    bool optimize = false;
     bool exportAllSymbols = false;                       ///< SECTION programs: put every label into the hunk symbol table (not only XDEF ones)
 };
 

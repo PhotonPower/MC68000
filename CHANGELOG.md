@@ -7,6 +7,9 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Assembler-Optimierung** `-O` (`AssemblerOptions::optimize`, Protokoll `optimize`): `ADD`/`SUB #1..8` → `ADDQ`/`SUBQ`, `MOVE.L #-128..127,Dn` → `MOVEQ`, `.L` → `.W` für 16-Bit-Werte
+  zu `An`; nur gewöhnliche Zahlen, Entscheidungen werden nie hin und her gedreht. Standardmäßig aus. Test `optimize` (11 721 Prüfungen, darunter 6000 zufällige Befehle:
+  optimiert und nicht optimiert führen zum selben Zustand) und 12 Fälle gegen GNU `as`.
 - **Adressfehler im Differenztest:** Musashi wird jetzt mit Adressfehler-Emulation gebaut; Einzelbefehls- und Folgentest vergleichen den 14-Byte-Rahmen (auch bei ungeraden Stapelzeigern).
   Das führte zu Korrekturen im Emulator-Kern (jeweils nach Musashis hardwarenahem Verhalten): PC-relative Operanden liegen im Programmraum (Funktionscode im Rahmen);
   `MOVE.L`/`MOVEM.L` nach `-(An)` schreiben das niederwertige Wort zuerst (Zugriffsadresse `ea+2`); `CMPM`, `UNLK`, `RTS`, `RTE`, `RTR` zählen Zeiger vor dem Zugriff weiter;

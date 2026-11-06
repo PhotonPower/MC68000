@@ -62,9 +62,26 @@ mit genau diesem Namen, probiert der Assembler Verwandte:
 | `SUB`, `CMP`| `SUBA`/`SUBI`, `CMPA`/`CMPI` entsprechend                       |
 | `AND`, `OR`, `EOR` mit `#n` ohne Dn-Ziel | `ANDI`, `ORI`, `EORI`              |
 
-Es wird **nichts optimiert**: `ADD.W #1,D0` bleibt `ADD` mit unmittelbarem Operanden (nicht `ADDQ`),
-`MOVE.L #5,D0` wird nicht zu `MOVEQ`. Wer `ADDQ`/`MOVEQ` will, schreibt es. (GNU `as` wählt hier
-andere Formen; `tools/crosscheck_gas.py` verwendet nur Schreibweisen, die beide gleich übersetzen.)
+Standardmäßig wird **nichts optimiert**: `ADD.W #1,D0` bleibt `ADD` mit unmittelbarem Operanden (nicht `ADDQ`),
+`MOVE.L #5,D0` wird nicht zu `MOVEQ`; Quelltext und Ausgabe entsprechen sich Befehl für Befehl. Wer `ADDQ`/`MOVEQ` will, schreibt es – oder schaltet die
+Optimierung ein (nächster Abschnitt).
+
+### Optimierung (`-O`, `AssemblerOptions::optimize`)
+
+Mit `m68ktool asm -O` (JSON-Protokoll: `"optimize": true`) nimmt der Assembler kürzere Formen, die **dasselbe Ergebnis** haben – dieselben Register, Flags und
+Speicherinhalte:
+
+| geschrieben | wird zu | Bedingung |
+|---|---|---|
+| `ADD`/`SUB`/`ADDA`/`SUBA #n,<ea>` | `ADDQ`/`SUBQ` | `n` = 1…8 (bei Byte nicht für `An`) |
+| `MOVE.L #n,Dn` | `MOVEQ` | `n` = −128…127 |
+| `ADD`/`SUB`/`MOVE`/`CMP` (`…A`) `.L #n,An` | `.W`-Form | `n` passt in 16 Bit mit Vorzeichen (der Wortoperand wird vorzeichenerweitert) |
+
+Nur **gewöhnliche Zahlen** werden verkürzt (auch Ausdrücke und Labels, deren Wert bekannt ist – `MOVE.L #label,D0` wird `MOVEQ`, wenn die Adresse unter 128 liegt); Adressen in
+Sektionsprogrammen nicht. Ausdrücke mit Vorwärtsverweisen werden erst in einem späteren Durchgang verkürzt; eine verkürzte Form, die später nicht mehr passt, wird zurückgenommen und
+**nie wieder** verkürzt, sodass die Durchgänge nicht hin und her springen. Ausdrücklich geschriebene Formen (`ADDI`, `ADDQ`, `MOVEQ`, `CMP`) bleiben unverändert.
+`tools/crosscheck_gas.py` vergleicht die Fälle mit GNU `as` (das dieselben Umwandlungen macht); Unterschied: bei `ADD.W #9,D1` (nicht als `ADDQ` möglich) wählt GNU `ADDI`, dieser
+Assembler bleibt bei `ADD` (gleich lang, gleiches Ergebnis).
 
 Aliase: `DBF` = `DBRA`, `BHS` = `BCC`, `BLO` = `BCS`, `SHS`/`SLO`, `DBHS`/`DBLO`.
 

@@ -23,6 +23,7 @@ Adressen und Zahlen dürfen in allen Schreibweisen des Assemblers angegeben werd
 | `-l <Datei\|->`   | Listing schreiben (`-` = Standardausgabe)                                      |
 | `-s <Datei\|->`   | Symboltabelle schreiben                                                        |
 | `--org <Adresse>` | Startadresse vor dem ersten `ORG` (Standard `0`)                               |
+| `-O`, `--optimize`| kürzere gleichwertige Formen (`ADD #1..8` → `ADDQ`, `MOVE.L #n,Dn` → `MOVEQ`, `.L` → `.W` bei 16-Bit-Werten für `An`), siehe [assembler-syntax.md](assembler-syntax.md#optimierung--o-assembleroptionsoptimize) |
 | `--hunk <Datei>`  | Programme mit `SECTION`-Zeilen: AmigaDOS-Ladedatei schreiben (Standard `<quelle>.hunk`)  |
 | `--hunk-symbols`  | alle Labels in die Hunk-Symboltabelle eintragen (sonst nur `XDEF`)             |
 

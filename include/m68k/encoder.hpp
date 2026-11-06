@@ -29,6 +29,7 @@ struct EncodeRequest {
     char size = 0;                      ///< 0 (none), 'B', 'W', 'L' or 'S' (short branch)
     std::vector<std::string> operands;  ///< operand texts in Motorola syntax
     Address pc = 0;                     ///< address of the instruction (offset inside its section for SECTION programs)
+    bool optimize = false;              ///< use shorter equivalent forms where the result is identical (see AssemblerOptions::optimize)
     int section = 0;                    ///< 0 = absolute program; else the tag of the instruction's section (tagOfSection(), see section.hpp)
     /// Sizing level remembered from earlier passes (0 = smallest encoding). Unsized branches and
     /// absolute addresses only ever grow: level 1 means the larger form.

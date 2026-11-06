@@ -21,7 +21,7 @@ Modell.
 Amiga-Hunk (siehe [amiga500.md](amiga500.md)):
 - **Hunk-Lader** (Relozieren, Symbole) – erledigt; Eingabeformat für den Disassembler, später für den Emulator
 - **Hunk-Ausgabe** des Assemblers (`SECTION`/`CODE`/`DATA`/`BSS`, `XDEF`, `RELOC32`, Speicherart `_C`/`_F`) – erledigt ([assembler-syntax.md](assembler-syntax.md#sektionen-und-hunk-ausgabe-section))
-- optional: Optimierungen des Assemblers (`ADD #n` → `ADDQ`, `MOVE #n` → `MOVEQ`, absolut → PC-relativ), per Schalter
+- Optimierungen des Assemblers (`ADD #n` → `ADDQ`, `MOVE.L #n,Dn` → `MOVEQ`, `.L` → `.W` für `An`), per Schalter `-O` – erledigt; noch offen: absolut → PC-relativ
 
 ## Meilenstein 0.3 – Emulator (erledigt)
 

@@ -385,6 +385,7 @@ struct Pass {
                     rq.pc = pc;
                     rq.section = hunkMode ? tagOfSection(static_cast<unsigned>(cur)) : 0;
                     rq.hint = hints[idx];
+                    rq.optimize = options.optimize;
                     std::string undefinedName;
                     const EncodeResult r = encodeInstruction(rq, [&](const std::string& e) {
                         EncodeValue v;
