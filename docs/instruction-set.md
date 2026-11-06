@@ -78,3 +78,18 @@ Detail ist für den Emulator wichtig (siehe [emulator.md](emulator.md)).
 Dieses Projekt unterstützt **nur den MC68000** (Entscheidung, siehe [roadmap.md](roadmap.md)). MC68008,
 MC68010 und höher (u. a. `MOVEC`, `RTD`, Vektorbasisregister, erweiterte Adressierung) sind kein Ziel;
 ihre Opcodes gelten als unerlaubte Befehle.
+
+## Was der Dekoder als unerlaubt behandelt
+
+Alles, was kein MC68000-Befehl ist, wird `DC.W $xxxx` (an ungerader Adresse `DC.B`):
+
+- Line A (`$Axxx`) und Line F (`$Fxxx`) – bei Amiga-Programmen kommen sie praktisch nur als Daten vor;
+- Opcodes des 68010 und höher (`RTD`, `MOVEC`, `MOVE from CCR`, 68020-`LINK.L`, lange Sprünge mit `$FF` …);
+- unerlaubte Adressierungsarten je Befehl (z. B. `MOVE.B An,Dn`, `ADDQ.B #n,An`, `TST` mit `#imm`, `CMPI` mit PC-relativ);
+- Sprünge und `DBcc` auf **ungerade Zieladressen** (der 68000 löste einen Adressfehler aus);
+- `MOVEM` mit leerer Registermaske;
+- nicht-kanonische Erweiterungswörter: ein Byte-Unmittelbares mit oberem Byte ≠ 0, eine Bitnummer
+  > 255, ein Indexwort mit gesetzten Bits 10–8 (68020-Skalierung).
+
+Die ersten Punkte entsprechen dem, was GNU `objdump` für den 68000 ausgibt (mit den in
+[testing.md](testing.md) genannten Ausnahmen); der letzte Punkt hält `assemble(disassemble(x)) == x` exakt.

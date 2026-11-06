@@ -16,18 +16,26 @@ $1000,"Einsprung: Hauptprogramm"
 - Der Text steht in Anführungszeichen (`""` ergibt ein Anführungszeichen) oder bis Zeilenende.
 - Mehrere Kommentare zur selben Adresse werden mit ` / ` zusammengefügt.
 - Kommentaradressen sind zusätzliche Einstiegspunkte der Ablaufanalyse.
-- Adressen müssen gerade sein (Befehle liegen immer an geraden Adressen).
+- Einstiegspunkte müssen an geraden Adressen liegen (Befehle stehen nie an ungeraden); ungerade werden von der Ablaufanalyse ignoriert.
+- Kommentare an Adressen mitten in einem Befehl werden nicht angezeigt.
 
 ## Raw-Binary
 
 Bytes von der niedrigsten bis zur höchsten Adresse; Lücken zwischen `ORG`-Segmenten werden mit `00`
-gefüllt. Beim Laden wird die Ladeadresse (`--org`) angegeben.
+gefüllt. Beim Laden (`m68ktool dis`) wird die Ladeadresse mit `--org` angegeben.
 
 ## Motorola S-Record
 
-Textformat mit Zeilen `S0`/`S1`/`S2`/`S3`/`S7`/`S8`/`S9`; für den 24-Bit-Adressraum des 68000
-genügen `S2` (24-Bit-Adressen) mit Abschluss `S8`. Jede Zeile hat eine Prüfsumme (Einerkomplement
-der Summe aller Bytes nach `S<typ>`).
+Textformat, eine Zeile pro Satz: `S<typ><Anzahl><Adresse><Daten><Prüfsumme>` (alles hexadezimal; die
+Anzahl zählt Adresse, Daten und Prüfsumme; die Prüfsumme ist das Einerkomplement der Summe aller Bytes
+von Anzahl bis Daten).
+
+- **Schreiben** (`--srec`): `S0`-Kopfzeile, `S2`-Datensätze (24-Bit-Adressen, höchstens 32 Datenbytes),
+  `S8` als Abschluss mit der niedrigsten Adresse als Startadresse.
+- **Lesen** (Dateiendung `.srec`, `.s19`, `.s28`, `.s37`, `.mot`): `S0` (ignoriert), `S1`/`S2`/`S3`
+  (Daten), `S5`/`S6` (ignoriert), `S7`/`S8`/`S9` (Startadresse). Prüfsummen und Längen werden
+  kontrolliert; Fehler nennen die Zeilennummer. Aneinandergrenzende Datensätze werden zu einem Segment
+  zusammengefasst.
 
 ## Amiga-Hunk (Eingabe und Ausgabe, geplant)
 

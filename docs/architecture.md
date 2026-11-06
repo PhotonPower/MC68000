@@ -40,15 +40,55 @@ derselben Bibliothek.
 | `types.hpp`, `version.hpp`          | `Byte`/`Word`/`Long`, Adressraum, `Size`, Version            | fertig  |
 | `format.hpp`                        | Zahlenformatierung (`$1F`, `0x1F`, `1FH`)                    | fertig  |
 | `memory.hpp`                        | `Memory`: dünn besetzter 16-MiB-Adressraum, Big-Endian       | fertig  |
-| `instruction.hpp`                   | `Instruction`: Adresse, Wörter, Mnemonic, Operanden, Flussart | geplant |
-| `decoder.hpp`                       | `decode(memory, address)` → ein `Instruction`                | geplant |
-| `expression.hpp`                    | Ausdrucksauswerter                                           | geplant |
-| `encoder.hpp`, `assembler.hpp`      | Befehl → Wörter, Mehrpass-Assembler                          | geplant |
-| `disassembler.hpp`                  | Ablaufanalyse, Querverweise, Kommentare, Ausgabe             | geplant |
+| `instruction.hpp`                   | `Instruction`: Adresse, Bytes, Mnemonic, Operanden, `FlowKind`, Ziel | fertig  |
+| `decoder.hpp`                       | `decode(memory, address, options)` → ein `Instruction`       | fertig  |
+| `expression.hpp`                    | Ausdrucksauswerter                                           | fertig  |
+| `encoder.hpp`                       | `encodeInstruction(request, value)` → Bytes; Operanden-Parser | fertig  |
+| `assembler.hpp`                     | Zeilenparser, Symboltabelle, Mehrpass, `AssemblyResult`      | fertig  |
+| `disassembler.hpp`                  | Ablaufanalyse, Querverweise, Kommentare, Ausgabe (`render`)  | fertig  |
+| `image_io.hpp`                      | Dateien lesen/schreiben, S-Record                            | fertig  |
 | `cpu.hpp`                           | `Registers`, `Cpu` (Ausführung, Ausnahmen, Breakpoints)      | geplant |
 | `snapshot.hpp`, `json.hpp`, `session.hpp` | Zustand speichern/laden, Agenten-Protokoll             | geplant |
 | `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
-| `image_io.hpp`                      | Dateien lesen/schreiben, S-Record                            | geplant |
+
+## Die Befehlstabelle
+
+Dekoder und Encoder teilen sich **eine** Tabelle (`src/forms.cpp`, intern): 164 *Formen* mit Name,
+Opcode-Maske und -Wert, Größenfeld, Operandenarten (Register in Bits 11–9 oder 2–0, `<ea>`, Unmittelbares,
+Sprung, Registerliste …) und den erlaubten Adressierungsarten je `<ea>`. Familien wie `Bcc`, `Scc`,
+`DBcc` und die Schiebebefehle werden in Schleifen erzeugt.
+
+- Der **Dekoder** nimmt die erste Form, deren Maske passt; ist dann ein Operand unerlaubt (z. B. `An` als
+  Ziel von `ADD Dn,<ea>`), ist das Wort unerlaubt. Spezifische Formen stehen deshalb vor allgemeinen
+  (`ADDX` vor `ADD`, `EXT` vor `MOVEM`, `MOVEA` vor `MOVE`, …).
+- Der **Encoder** sucht Formen gleichen Namens, prüft Operandenarten und Wertebereiche und baut Opcode
+  und Erweiterungswörter. Weil beide dieselbe Tabelle benutzen, kann es keine Form geben, die nur eine der
+  beiden Seiten kennt; Tabellenfehler fallen im Roundtrip- und im `objdump`-Vergleich auf.
+- Nicht-kanonische Erweiterungswörter (Byte-Unmittelbares mit oberem Byte ≠ 0, Indexwörter mit gesetzten
+  Skalierungsbits des 68020) lehnt der Dekoder ab. So bleibt `assemble(disassemble(x)) == x` exakt.
+
+## Assembler
+
+Der Assembler läuft **mehrfach** über den Quelltext:
+
+1. Durchläufe, bis sich Symboltabelle **und** die gewählten Größen nicht mehr ändern (höchstens 40).
+   Für jede Zeile merkt er sich eine *Stufe* (0 = kleinste Form); unbestimmte Sprünge und absolute
+   Adressen starten klein und wachsen nur. Weil Größen nie schrumpfen, konvergiert das Verfahren.
+2. Der letzte Durchlauf liefert Bytes, Listing und – erst jetzt – Fehlermeldungen (so gibt es keine
+   Scheinfehler aus Zwischenzuständen).
+
+Verschiebungen werden modulo 2²⁴ berechnet, weil der Programmzähler des 68000 bei 16 MiB umläuft; der
+Dekoder rechnet Sprungziele genauso.
+
+## Disassembler
+
+`Disassembler` hält pro Byte des Bereichs einen Zustand (Daten / Befehlsanfang / Befehlsrest). `analyzeFlow()`
+folgt Wegen von den Einstiegspunkten: ein Weg endet bei `RTS`/`RTE`/`RTR`/`ILLEGAL`, bei unbedingten Sprüngen,
+bei ungültigen Wörtern, bei Code, der schon analysiert ist (oder überlappen würde), und am Bereichsende.
+Ziele von `BSR`/`JSR`/`Bcc`/`DBcc`/`BRA`/`JMP` werden neue Wege und Labels; Datenzugriffe (absolut oder PC-relativ)
+werden nur Labels. `render()` setzt Labels über einen `Symbolizer` in die Operanden ein; Labels, die in der
+Mitte einer Zeile liegen, werden im Quelltext-Modus als `EQU` mit ihrem Wert definiert. Ein Label ersetzt
+nie einen Operanden, dessen Wert es nicht exakt trifft (`abs.L` mit oberem Byte, vorzeichenerweitertes `.W`).
 
 ## Unterschiede zum Z80, die den Entwurf bestimmen
 

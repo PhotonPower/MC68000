@@ -40,7 +40,14 @@ endfunction()
 # ---- core library ---------------------------------------------------------------------
 # New components (assembler, decoder, cpu, ...) are added to this list as they are written.
 add_library(m68kcore STATIC
-  src/format.cpp)
+  src/assembler.cpp
+  src/decoder.cpp
+  src/disassembler.cpp
+  src/encoder.cpp
+  src/expression.cpp
+  src/forms.cpp
+  src/format.cpp
+  src/image_io.cpp)
 target_include_directories(m68kcore PUBLIC include)
 target_compile_features(m68kcore PUBLIC cxx_std_20)
 m68k_set_warnings(m68kcore)
@@ -53,9 +60,11 @@ m68k_set_warnings(m68ktool)
 install(TARGETS m68ktool RUNTIME DESTINATION bin)
 
 # ---- developer tools ------------------------------------------------------------------
-# Reserved for cross-check helpers (see docs/testing.md); nothing to build yet.
+# Cross-check helpers (see docs/testing.md).
 if(M68K_BUILD_TOOLS)
-  message(STATUS "M68K_BUILD_TOOLS: no developer tools yet")
+  add_executable(m68k_dump_forms tools/dump_forms.cpp)
+  target_link_libraries(m68k_dump_forms PRIVATE m68kcore)
+  m68k_set_warnings(m68k_dump_forms)
 endif()
 
 # ---- tests ----------------------------------------------------------------------------

@@ -1,9 +1,8 @@
 ; hello.s - minimal MC68000 example (Motorola syntax)
 ;
-; NOT assemblable yet: the assembler is planned (see docs/roadmap.md). The file serves as the
-; first test input once `m68ktool asm` exists:
-;
-;   m68ktool asm examples/hello.s -l -
+;   m68ktool asm examples/hello.s -l -                 assemble, listing on the screen
+;   m68ktool asm examples/hello.s -o hello.bin
+;   m68ktool dis hello.bin --org 0x1000 -c examples/hello.comments.txt
 ;
 ; It copies a zero-terminated string to a memory-mapped output port. The port address is an
 ; assumption of this example, not a real machine.

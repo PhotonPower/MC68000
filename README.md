@@ -10,37 +10,41 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
-> **Status: Version 0.1 – Projektgerüst.** Build, Tests, CI und Dokumentation stehen; die eigentlichen
-> Werkzeuge werden nach der [Roadmap](docs/roadmap.md) umgesetzt. Die Dokumente unter `docs/`
-> beschreiben das **Zielbild** und sind am Anfang jeweils als „geplant“ gekennzeichnet, soweit noch
-> nichts davon existiert.
+> **Status: Version 0.2.** Assembler und Disassembler sind fertig und gegen GNU `objdump`/`as` kreuzgeprüft.
+> Emulator, Monitor und Agenten-Schnittstelle folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
+> unter `docs/` beschreiben das **Zielbild** und sind als „geplant“ gekennzeichnet.
 
 ## Was es heute gibt
 
-- `m68k/types.hpp` – `Byte`/`Word`/`Long`, 24-Bit-Adressraum (16 MiB), `Size` (.B/.W/.L)
-- `m68k/format.hpp` – Hexadezimalausgabe (`$1F`, `0x1F`, `1FH`)
-- `m68k/memory.hpp` – dünn besetzter 16-MiB-Speicher, Big-Endian, Adressen auf 24 Bit maskiert
-- `m68ktool help | version`
-- Tests (`ctest`), CI für Linux/macOS/Windows plus AddressSanitizer/UBSan
+**Assembler** (`m68ktool asm`, Motorola-Syntax, [docs/assembler-syntax.md](docs/assembler-syntax.md))
+- alle Befehle des MC68000 mit allen Adressierungsarten; Labels (auch lokale), `EQU`, `ORG` (mehrfach), `DC`/`DS`, `EVEN`
+- Ausdrücke: `+ - * / % << >> & | ^ ~`, Klammern, `*` (aktuelle Adresse), Zahlen als `123`, `$1F`, `0x1F`, `%1010`, `'A'`
+- Vorwärtsreferenzen; Sprünge und absolute Adressen wählen die kürzeste passende Größe (Mehrpass)
+- Ausgabe: Raw-Binary, Motorola S-Record, Listing, Symboltabelle; Fehlermeldungen mit Zeilennummer, alle Fehler eines Laufs
 
-## Geplante Funktionen
+**Disassembler** (`m68ktool dis`, [docs/usage.md](docs/usage.md))
+- Ablaufanalyse: folgt `BSR`, `JSR`, `BRA`, `Bcc`, `DBcc`, `JMP` ab den Einstiegspunkten und trennt so Code von Daten;
+  alternativ linearer Durchlauf
+- Labels und Querverweise, Kommentardatei (`Adresse,"Text"`), Zahlenstile
+- Ausgabe als lesbares Listing **oder** als wieder assemblierbarer Quelltext (`--asm`, byte-genau)
+- Eingabe: Raw-Binary oder S-Record
 
-**Assembler** (Motorola-Syntax, [docs/assembler-syntax.md](docs/assembler-syntax.md))
-- alle Befehle des MC68000 mit allen Adressierungsarten, Labels, `EQU`, `ORG`, `DC`/`DS`, `EVEN`
-- Ausgabe: Raw-Binary, Motorola S-Record, Listing, Symboltabelle
+**Bibliothek `m68kcore`:** `Memory` (16 MiB, Big-Endian), `decode()`, `encodeInstruction()`, `assemble()`,
+`Disassembler`, S-Record-Ein-/Ausgabe, Ausdrucksauswerter.
 
-**Disassembler** (Ablaufanalyse wie im Z80-Projekt: folgt `JSR`, `BSR`, `BRA`, `Bcc`, `DBcc`)
-- Querverweise, Kommentardatei, wieder assemblierbarer Quelltext (`--asm`)
+**Getestet** ([docs/testing.md](docs/testing.md)): ein exhaustiver Roundtrip über alle 65536 Opcode-Wörter
+(rund 248 000 Befehle), 111 Zeilen mit Bytes aus GNU `as`, Zufallstests und – als unabhängige
+Kreuzprüfung – der Dekoder gegen GNU `objdump` (Gültigkeit, Länge, Mnemonic, Operanden aller 65536 Opcodes)
+und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 
-**Emulator** ([docs/emulator.md](docs/emulator.md))
-- befehlsgenauer MC68000-Kern mit Ausnahmebehandlung und Supervisor-/Benutzermodus; maßgeblich sind die Ergebnisse in Registern und Speicher, kein Timing
-- Einzelschritt, Breakpoints, Watchpoints, Checkpoints, Snapshots, Speicher-/E/A-Hooks
-- Agenten-Schnittstelle `m68ktool serve` (JSON-Zeilenprotokoll, [docs/agent-protocol.md](docs/agent-protocol.md))
+## Geplant
 
-**Monitor** ([docs/monitor.md](docs/monitor.md)) – `m68ktool monitor`
-- disassemblieren, Speicher ansehen/ändern, Zeilen assemblieren, Register, Ausführen im Emulator
-
-**Reverse Engineering mit lokalem LLM** ([docs/reverse-engineering.md](docs/reverse-engineering.md))
+- **Emulator** ([docs/emulator.md](docs/emulator.md)): befehlsgenauer MC68000-Kern, Ausnahmen, Supervisor-/Benutzermodus,
+  Breakpoints, Watchpoints, Checkpoints; nur Register und Speicher zählen, **kein Timing**
+- **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md)) und **Agenten-Schnittstelle**
+  (`m68ktool serve`, [docs/agent-protocol.md](docs/agent-protocol.md))
+- **Amiga-Hunk-Lader** und -Ausgabe, **Reverse Engineering mit lokalem LLM**
+  ([docs/reverse-engineering.md](docs/reverse-engineering.md))
 
 ## Schnellstart
 
@@ -49,7 +53,9 @@ cmake -S . -B build
 cmake --build build
 ctest --test-dir build
 
-./build/m68ktool version
+./build/m68ktool asm examples/hello.s -l - -o hello.bin      # assemblieren, Listing auf den Bildschirm
+./build/m68ktool dis hello.bin --org 0x1000                  # disassemblieren (Ablaufanalyse)
+./build/m68ktool dis hello.bin --org 0x1000 --asm            # als wieder assemblierbarer Quelltext
 ```
 
 Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 2022).
@@ -72,6 +78,28 @@ Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 
 | [docs/roadmap.md](docs/roadmap.md)                       | Meilensteine und offene Fragen                          |
 | [CONTRIBUTING.md](CONTRIBUTING.md)                       | Bauen, Konventionen                                     |
 | [CHANGELOG.md](CHANGELOG.md)                             | Änderungen                                              |
+
+## Beispiel
+
+```console
+$ m68ktool asm examples/hello.s -o hello.bin
+examples/hello.s: 34 bytes, $001000, 0 error(s)
+
+$ m68ktool dis hello.bin --org 0x1000 -c examples/hello.comments.txt --no-bytes
+; MC68000 disassembly  $001000 - $001021
+L_001000:
+001000  LEA      L_001012(PC),A0  ; entry: print the message below
+L_001004:               ; <- $00100E
+001004  MOVE.B   (A0)+,D0  ; fetch the next character
+001006  BEQ.S    L_001010
+001008  MOVE.B   D0,$00FF0000.L
+00100E  BRA.S    L_001004
+L_001010:               ; <- $001006
+001010  RTS
+L_001012:               ; <- $001000
+001012  DC.B     $48,$65,$6C,$6C,$6F,$2C,$20,$36
+00101A  DC.B     $38,$30,$30,$30,$21,$0D,$0A,$00
+```
 
 ## Projektstruktur
 

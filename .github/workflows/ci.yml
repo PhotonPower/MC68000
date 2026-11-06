@@ -41,3 +41,17 @@ jobs:
         run: cmake --build build
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  crosscheck:
+    name: Cross-check against GNU binutils
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install binutils for m68k
+        run: sudo apt-get update && sudo apt-get install -y binutils-m68k-linux-gnu
+      - name: Build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DM68K_BUILD_TOOLS=ON -DM68K_BUILD_TESTS=OFF && cmake --build build
+      - name: Decoder against objdump (all 65536 opcode words)
+        run: python3 tools/crosscheck_objdump.py build/m68k_dump_forms 0 3
+      - name: Assembler against GNU as
+        run: python3 tools/crosscheck_gas.py build/m68ktool

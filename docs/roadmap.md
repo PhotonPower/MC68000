@@ -5,16 +5,22 @@
 
 ## Wo wir stehen
 
-Projektgerüst (0.1): Build, Tests, CI, Dokumentation, `types`/`format`/`memory`.
+**Version 0.2:** Dekoder, Assembler und Disassembler (Meilenstein 0.2) sind fertig und gegen GNU binutils
+kreuzgeprüft ([testing.md](testing.md)). `m68ktool asm` und `m68ktool dis` arbeiten mit Raw-Binary und
+Motorola S-Records. Emulator, Monitor und Agenten-Schnittstelle fehlen noch.
 
-## Meilenstein 0.2 – Dekoder, Assembler, Disassembler
+## Meilenstein 0.2 – Dekoder, Assembler, Disassembler (erledigt)
 
-- `Instruction`, `decode()` nach Schema (Opcode-Gruppen, Modus/Register-Felder, Erweiterungswörter)
+- `Instruction`, `decode()` nach Tabelle (Opcode-Maske, Modus/Register-Felder, Erweiterungswörter)
 - Ausdrucksauswerter, `encodeInstruction()`, Mehrpass-Assembler mit Verschiebungsgrößen-Bestimmung
-- Disassembler mit Ablaufanalyse (`JSR`, `BSR`, `BRA`, `Bcc`, `DBcc`, `JMP`), Querverweisen, Kommentardatei, `--asm`
-- Ausgabeformate: Raw-Binary, S-Record, Amiga-Hunk-Executable, Listing, Symboltabelle
-- Hunk-Lader (Relozieren) als Eingabeformat für den Disassembler
-- Tests: Einzelbefehle, exhaustiver Roundtrip, Robustheit
+- Disassembler mit Ablaufanalyse, Querverweisen, Kommentardatei, `--asm`
+- Ausgabeformate: Raw-Binary, S-Record, Listing, Symboltabelle
+- Tests: Einzelbefehle, exhaustiver Roundtrip, Robustheit, Kreuzprüfung gegen `objdump` und `as`
+
+Noch offen aus diesem Meilenstein (Amiga-Hunk, siehe [amiga500.md](amiga500.md)):
+- **Hunk-Lader** (Relozieren) als Eingabeformat für den Disassembler und den späteren Emulator
+- **Hunk-Ausgabe** des Assemblers (`SECTION`, `XDEF`, Relokationen)
+- optional: Optimierungen des Assemblers (`ADD #n` → `ADDQ`, `MOVE #n` → `MOVEQ`, absolut → PC-relativ), per Schalter
 
 ## Meilenstein 0.3 – Emulator
 
