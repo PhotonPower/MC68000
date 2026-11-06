@@ -30,7 +30,10 @@ std::string bytesAt(Monitor& m, Address a, int n) {
 struct HunkBuilder {
     std::vector<Byte> out;
     void u32(std::uint32_t v) {
-        for (int i = 3; i >= 0; --i) out.push_back(static_cast<Byte>(v >> (8 * i)));
+        // resize + assignment instead of four push_back calls: GCC 15 reports a false -Wstringop-overflow for push_back on a vector<unsigned char>
+        const std::size_t at = out.size();
+        out.resize(at + 4);
+        for (std::size_t i = 0; i < 4; ++i) out[at + i] = static_cast<Byte>(v >> (24 - 8 * i));
     }
 };
 
