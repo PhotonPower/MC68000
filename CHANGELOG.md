@@ -7,6 +7,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Adressfehler im Differenztest:** Musashi wird jetzt mit Adressfehler-Emulation gebaut; Einzelbefehls- und Folgentest vergleichen den 14-Byte-Rahmen (auch bei ungeraden Stapelzeigern).
+  Das führte zu Korrekturen im Emulator-Kern (jeweils nach Musashis hardwarenahem Verhalten): PC-relative Operanden liegen im Programmraum (Funktionscode im Rahmen);
+  `MOVE.L`/`MOVEM.L` nach `-(An)` schreiben das niederwertige Wort zuerst (Zugriffsadresse `ea+2`); `CMPM`, `UNLK`, `RTS`, `RTE`, `RTR` zählen Zeiger vor dem Zugriff weiter;
+  `CLR` setzt die Flags nach dem Schreiben; `LINK` holt die Verschiebung nach dem Push. Zusätzliche Unit-Tests. Nicht verglichen werden die undefinierten Bits des
+  Statuswortes (siehe docs/emulator.md). Ergebnis: 0 Abweichungen (Einzelbefehle: rund 5 % der Fälle sind Adressfehler; 180 000 Folgen).
 - **Differenztest für Befehlsfolgen gegen Musashi** (`tools/diff_musashi_seq.cpp`, in `tools/run_diff_musashi.sh` und der CI): zufällige Programme aus 2–10 Befehlen
   im Gleichschritt, Vergleich nach jedem Befehl (Register, SR, PC, geschriebene Bytes), Handler für Ausnahmen, Musashi mit Trace-Emulation. 0 Abweichungen über
   60 000 Programme; eine absichtlich falsche Trace-Entscheidung wird gefunden. Nicht verglichen: Adressfehler, `STOP`, PC über 24 Bit (Musashi behält das obere Byte,

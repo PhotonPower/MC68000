@@ -5,9 +5,12 @@
 //
 // For every opcode word (all 65536) and every trial, a random processor state and random extension
 // words are set up in both emulators; one instruction is executed in each; then all registers, the
-// status register and every byte written to memory are compared. Cases where this core raises an
-// address error are skipped (Musashi is built without address-error emulation). See
-// tools/run_diff_musashi.sh for building Musashi and running this tool.
+// status register and every byte written to memory are compared - including the 14-byte frame of an
+// address error when Musashi was built with M68K_EMULATE_ADDRESS_ERROR=1 and this tool with
+// -DM68K_DIFF_ADDRESS_ERRORS (tools/run_diff_musashi.sh does both). Without that, cases in which this
+// core raises an address error are skipped. Not compared in an address-error frame: status word bits
+// 15-5 (undefined; this core fills them from the opcode word, Musashi leaves them 0) and bit 3
+// (stale state in Musashi). See tools/run_diff_musashi.sh for building Musashi and running this tool.
 
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +25,12 @@
 extern "C" {
 #include "m68k.h"
 }
+
+#ifdef M68K_DIFF_ADDRESS_ERRORS
+constexpr bool kCompareAddressErrors = true;   // Musashi was built with M68K_EMULATE_ADDRESS_ERROR=1
+#else
+constexpr bool kCompareAddressErrors = false;
+#endif
 
 namespace {
 
@@ -136,6 +145,10 @@ int main(int argc, char** argv) {
             if (rng() % 8 == 0) st.a[rng() % 7] = randomValue(rng);  // wild pointers too
             st.usp = randomPointer(rng) + 0x100;
             st.ssp = randomPointer(rng) + 0x100;
+            if (kCompareAddressErrors) {  // odd stack pointers too (pops and pushes that fail, errors while an exception frame is written)
+                if (rng() % 24 == 0) st.usp |= 1;
+                if (rng() % 24 == 0) st.ssp |= 1;
+            }
             st.sr = static_cast<Word>(((rng() % 4 == 0) ? 0 : 0x2000) | ((rng() % 8) << 8) | (rng() % 32));
             Word words[6];
             words[0] = static_cast<Word>(op);
@@ -158,7 +171,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 6; ++i) mem.write16(kPc + 2 * i, words[i]);
             ourWrites.clear();
             const StepResult sr = cpu.step();
-            if (sr.exception == kVecAddressError || sr.reason == StopReason::Halted || sr.reason == StopReason::Stopped) {
+            if ((!kCompareAddressErrors && sr.exception == kVecAddressError) || sr.reason == StopReason::Halted || sr.reason == StopReason::Stopped) {
                 // restore memory and skip
                 ++skipped;
                 for (const auto& w : ourWrites)
@@ -206,6 +219,15 @@ int main(int argc, char** argv) {
             diff("SR", r.sr, m68k_get_reg(nullptr, M68K_REG_SR) & kSrValidBits);
             diff("USP", r.usp(), m68k_get_reg(nullptr, M68K_REG_USP));
             diff("SSP", r.ssp(), m68k_get_reg(nullptr, M68K_REG_ISP));
+            // The status word of an address-error frame: bits 15-5 are undefined (this core fills them from the opcode word, Musashi
+            // leaves them 0), and bit 3 (instruction / not instruction) is stale state in Musashi (it stays 1 after an earlier exception until
+            // an RTE or similar resets it; this core writes 0 for an error inside an instruction). Bits 4 (read/write) and 2-0 (function code)
+            // are compared.
+            if (kCompareAddressErrors && sr.exception == kVecAddressError) {
+                const Address sp = r.a[7];
+                mem.write8(sp, g_ref[sp & 0xFFFFFF]);
+                mem.write8(sp + 1, static_cast<Byte>((mem.read8(sp + 1) & 0x17) | (g_ref[(sp + 1) & 0xFFFFFF] & 0xE8)));
+            }
             // memory: every byte written by either side
             std::map<Address, int> touched;
             for (const auto& w : ourWrites)
@@ -219,6 +241,22 @@ int main(int argc, char** argv) {
                 ++failures;
                 std::string kind = what;
                 kind = kind.substr(0, kind.find(':'));
+                if (kCompareAddressErrors && sr.exception == kVecAddressError) {
+                    // classify an address-error mismatch by the part of the frame (or the register) that differs
+                    const Address sp = r.a[7];
+                    const unsigned musashiSp = m68k_get_reg(nullptr, M68K_REG_SP);
+                    std::string part = "registers";
+                    if (sp == musashiSp) {
+                        auto differs = [&](unsigned from, unsigned to) {
+                            for (unsigned i = from; i < to; ++i)
+                                if (mem.read8(sp + i) != g_ref[(sp + i) & 0xFFFFFF]) return true;
+                            return false;
+                        };
+                        part = differs(0, 2) ? "frame status word" : differs(2, 6) ? "frame access address" : differs(6, 8) ? "frame instruction word"
+                               : differs(8, 10) ? "frame SR" : differs(10, 14) ? "frame PC" : "registers";
+                    }
+                    kind = "address error, " + part;
+                }
                 // the instruction text is taken from a clean memory image
                 Memory clean;
                 for (int i = 0; i < 6; ++i) clean.write16(kPc + 2 * i, words[i]);

@@ -19,7 +19,12 @@ siehe die Entscheidungen in der [Roadmap](roadmap.md).
   `reset()` startet ihn neu.
 - **Interrupts** auf Anforderung (`interrupt(level, vector)`): Pegel 1–7, Pegel 7 nicht maskierbar, Autovektoren
   oder ein vom Gerät gelieferter Vektor; `STOP` wartet auf einen Interrupt.
-- **Adressfehler** bei Wort-/Langwortzugriffen und Befehlsholen an ungeraden Adressen; Adressen laufen bei 16 MiB um.
+- **Adressfehler** bei Wort-/Langwortzugriffen und Befehlsholen an ungeraden Adressen; Adressen laufen bei 16 MiB um. Der 14-Byte-Rahmen enthält
+  Statuswort (Lesen/Schreiben, **Funktionscode**: Daten- oder **Programmraum** – PC-relative Operanden und Befehlsholen sind Programmraum), Zugriffsadresse,
+  Befehlswort, SR und PC. Einzelheiten, die sich beim Abgleich mit Musashi zeigten und nach dessen (hardwarenahem) Verhalten umgesetzt sind: `MOVE.L`/`MOVEM.L`
+  nach `-(An)` schreiben das **niederwertige Wort zuerst**, ein ungerader Zugriff wird also bei `ea+2` gemeldet; Adressregister mit `(An)+` und der Stapelzeiger bei
+  Pops (`UNLK`, `RTS`, `RTE`, `RTR`) sind beim Fehler **schon weitergezählt**; `CLR` und `MOVE` setzen ihre Flags **nach** dem Schreiben (ein Fehler lässt die alten
+  Flags im Rahmen); bei `LINK` wird die Verschiebung nach dem Push geholt (gestapelter PC = Befehlsadresse + 2).
 
 ## Bedienung
 
@@ -65,7 +70,8 @@ verhalten sich deshalb möglicherweise anders als auf echter Hardware.
    zwischen Benutzer- und Supervisor-Modus, Auto-Inkrement/-Dekrement und das X-Flag über mehrere Befehle hinweg sind Teil des Vergleichs. Musashi wird dafür mit
    **Trace-Emulation** gebaut, sodass auch die Trace-Ausnahme verglichen wird (ein vorheriges `MOVE …,SR` setzt das T-Bit). Ergebnis: **0 Abweichungen** über
    60 000 Programme (rund 300 000 Befehle, rund 60 000 Ausnahmen). Der Test hat Wirkung: Eine absichtlich falsche Trace-Entscheidung (nach statt vor dem Befehl) wird sofort
-   gefunden, vom Einzelbefehlstest nicht. Nicht verglichen werden Programme mit **Adressfehlern** (Musashi ist ohne gebaut), mit `STOP` und solche, in denen der
+   gefunden, vom Einzelbefehlstest nicht. Seit Musashi mit **Adressfehler-Emulation** gebaut wird, sind auch Adressfehler Teil des Vergleichs (14-Byte-Rahmen, Folgen mit ungeraden Stapelzeigern; ein Handler baut den
+   Rahmen wieder ab). Nicht verglichen werden Programme mit `STOP`, an einem 68040-`MOVE16`-Wort (Musashi führt es auch als 68000 aus) und solche, in denen der
    **PC Bits oberhalb von Bit 23** bekommt (ein `RTE`/`RTS`/`JMP` auf eine solche Adresse): Musashi behält das obere Byte des PC und legt es später wieder auf den Stapel, dieser
    Kern maskiert den PC auf 24 Bit; was der echte MC68000 dort tut, lässt sich mit diesem Test nicht entscheiden (praktisch kommt es in Amiga-Programmen nicht vor).
 3. **Unit-Tests** (`tests/test_cpu.cpp`, rund 52 000 Prüfungen): von Hand gerechnete Ergebnisse und Flags,
@@ -92,8 +98,9 @@ dem Verhalten von Musashi (so wie die meisten Emulatoren):
   (sichtbar nur über Lese-Watchpoints bzw. -Hooks); Befehlsholen und Vektorlesen laufen über `readOverride`
   (Code im ROM, Vektortabelle über das Overlay), aber nicht über `accessHook` und Watchpoints.
 - Interrupts kommen nur über `interrupt()`, nicht von Geräten; der Differenztest deckt Adressfehler, Interrupts,
-  `STOP` und Adressfehler nicht ab (Musashi ist ohne Adressfehler gebaut) – dafür gibt es die Unit-Tests. Befehlsfolgen und Trace werden seit dem
-  Folgentest verglichen (siehe oben). Das obere Byte des PC wird nicht nachgebildet: der PC ist 24 Bit breit.
+  `STOP` nicht ab – dafür gibt es die Unit-Tests. Adressfehler, Befehlsfolgen und Trace werden verglichen (siehe oben); im Statuswort eines Adressfehler-Rahmens
+  nicht: die Bits 15–5 (undefiniert: dieser Kern füllt sie aus dem Befehlswort, Musashi mit 0) und Bit 3 (Musashi behält dort einen Rest früherer Ausnahmen).
+  Der **gestapelte PC** bei Adressfehlern ist nur so genau wie Musashi (die echte Hardware stapelt je nach Befehl einen anderen Wert). Das obere Byte des PC wird nicht nachgebildet: der PC ist 24 Bit breit.
 
 ## Plattformen
 

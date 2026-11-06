@@ -203,6 +203,7 @@ private:
         unsigned reg = 0;
         Address addr = 0;
         Long imm = 0;
+        bool program = false;  // PC-relative operands are read from program space (function code 2/6 in an address-error frame)
     };
 
     Cpu& c_;
@@ -235,8 +236,8 @@ private:
             }
         }
     }
-    Long read(Address a, Size s) {
-        if (s != Size::B && (a & 1U)) addressError(a, true, false);
+    Long read(Address a, Size s, bool program = false) {
+        if (s != Size::B && (a & 1U)) addressError(a, true, program);
         a &= kAddressMask;
         Long v;
         if (!(c_.readOverride && c_.readOverride(a, s, v))) {
@@ -244,6 +245,11 @@ private:
         }
         noteAccess(a, s, v, false);
         return v;
+    }
+    // A long write to -(An) (MOVE.L, MOVEM.L) puts the LOW word first, so an odd address is detected at ea+2 (that is the access address in the frame).
+    void writePd(Address a, Size s, Long v) {
+        if (s == Size::L && (a & 1U)) addressError(a + 2, false, false);
+        write(a, s, v);
     }
     void write(Address a, Size s, Long v) {
         if (s != Size::B && (a & 1U)) addressError(a, false, false);
@@ -277,15 +283,16 @@ private:
         r_.a[7] -= 4;
         write(r_.a[7], Size::L, v);
     }
+    // Like every (An)+ the stack pointer is incremented before the access, so after an address error in a pop it has already moved.
     Word pop16() {
-        const Word v = static_cast<Word>(read(r_.a[7], Size::W));
+        const Address a = r_.a[7];
         r_.a[7] += 2;
-        return v;
+        return static_cast<Word>(read(a, Size::W));
     }
     Long pop32() {
-        const Long v = read(r_.a[7], Size::L);
+        const Address a = r_.a[7];
         r_.a[7] += 4;
-        return v;
+        return read(a, Size::L);
     }
 
     // ---- flags ----
@@ -396,11 +403,13 @@ private:
             case 2: {
                 const Address base = r_.pc;
                 e.addr = base + sext16to32(fetch16());
+                e.program = true;
                 return e;
             }
             case 3: {
                 const Address base = r_.pc;
                 e.addr = indexed(base);
+                e.program = true;
                 return e;
             }
             default:  // 4: immediate
@@ -420,7 +429,7 @@ private:
             case Ea::Dn: return readD(e.reg, s);
             case Ea::An: return r_.a[e.reg] & maskOf(s);
             case Ea::Imm: return e.imm & maskOf(s);
-            default: return read(e.addr, s);
+            default: return read(e.addr, s, e.program);
         }
     }
     void writeEa(const Ea& e, Size s, Long v) {
@@ -611,7 +620,7 @@ void Exec::doMovem(Mn mn, Word w, Size s) {
                 Long v = regValue(i);
                 if (i == 8 + reg) v = initial;  // the 68000 stores the initial value of An
                 addr -= step;
-                write(addr, s, v);
+                writePd(addr, s, v);
             }
             r_.a[reg] = addr;
         } else {
@@ -624,11 +633,12 @@ void Exec::doMovem(Mn mn, Word w, Size s) {
         }
     } else {
         Address addr;
+        const bool program = mode == 7 && (reg == 2 || reg == 3);
         if (mode == 3) addr = r_.a[reg];
         else addr = decodeEa(mode, reg, s).addr;
         for (unsigned i = 0; i < 16; ++i) {
             if (!(mask & (1U << i))) continue;
-            Long v = read(addr, s);
+            Long v = read(addr, s, program);
             if (s == Size::W) v = sext16to32(static_cast<Word>(v));
             setReg(i, v);
             addr += step;
@@ -643,7 +653,8 @@ void Exec::doMove(Mn mn, const Form& f, Word w, Size s) {
             const Ea src = eaOf(f, 0, w, s);
             const Long v = readEa(src, s);
             const Ea dst = eaOf(f, 1, w, s);
-            writeEa(dst, s, v);
+            if (dst.kind == Ea::Mem && ((w >> 6) & 7U) == 4U) writePd(dst.addr, s, v);
+            else writeEa(dst, s, v);
             logicFlags(v, s);
             break;
         }
@@ -816,10 +827,12 @@ void Exec::doArithmetic(Mn mn, const Form& f, Word w, Size s) {
         }
         case Mn::Cmpm: {
             const unsigned ry = w & 7U;
-            const Long a = read(r_.a[ry], s);
-            r_.a[ry] += incr(ry, s);
-            const Long d = read(r_.a[dn], s);
+            const Address srcAddr = r_.a[ry];
+            r_.a[ry] += incr(ry, s);                // the address registers are incremented before the access, like every (An)+
+            const Long a = read(srcAddr, s);
+            const Address dstAddr = r_.a[dn];
             r_.a[dn] += incr(dn, s);
+            const Long d = read(dstAddr, s);
             sub(a, d, s, false, false);
             break;
         }
@@ -834,8 +847,9 @@ void Exec::doArithmetic(Mn mn, const Form& f, Word w, Size s) {
             if (mn == Mn::Neg) r = sub(d, 0, s, false);
             else if (mn == Mn::Negx) r = sub(d, 0, s, true);
             else if (mn == Mn::Not) { r = ~d & maskOf(s); logicFlags(r, s); }
-            else { r = 0; logicFlags(0, s); }
+            else { r = 0; }
             writeEa(dst, s, r);
+            if (mn == Mn::Clr) logicFlags(0, s);    // after the write, like MOVE: an address error leaves the old flags in the frame
             break;
         }
         // ---- multiply and divide ----
@@ -1026,7 +1040,7 @@ void Exec::doMisc(Mn mn, const Form& f, Word w, Size s) {
             break;
         case Mn::Link: {
             const unsigned n = w & 7U;
-            const Long disp = sext16to32(fetch16());
+            // The displacement is fetched after the push (as Musashi does): an address error in the push stacks the PC behind the opcode only.
             if (n == 7) {  // LINK A7: the decremented stack pointer is what gets pushed
                 r_.a[7] -= 4;
                 write(r_.a[7], Size::L, r_.a[7]);
@@ -1034,6 +1048,7 @@ void Exec::doMisc(Mn mn, const Form& f, Word w, Size s) {
                 push32(r_.a[n]);
                 r_.a[n] = r_.a[7];
             }
+            const Long disp = sext16to32(fetch16());
             r_.a[7] += disp;
             break;
         }

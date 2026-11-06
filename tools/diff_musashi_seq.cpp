@@ -11,9 +11,10 @@
 //
 // The vector table points to small handlers: `RTE` for exceptions whose stacked PC is the next instruction (CHK, TRAPV, TRAP #n,
 // division by zero) and `ADDQ.L #2,2(A7) ; RTE` for illegal instruction, privilege violation and line A/F (it skips the faulting
-// opcode word), so that a program goes on after an exception. Programs in which this core raises an address error are dropped
-// (Musashi is built without address-error emulation), as are programs that reach STOP and programs in which the PC gets bits above
-// bit 23 (an RTE/RTS/JMP to such an address): Musashi keeps the upper byte of the PC and pushes it again later, this core masks the PC
+// opcode word), so that a program goes on after an exception; an address error leaves a 14-byte frame that its handler takes apart.
+// Without -DM68K_DIFF_ADDRESS_ERRORS programs in which this core raises an address error are dropped (Musashi is then built without
+// address-error emulation), as are programs that reach STOP and programs in which the PC gets bits above
+// bit 23 (an RTE/RTS/JMP to such an address) or at a 68040 MOVE16 word (Musashi emulates it for the 68000 too): Musashi keeps the upper byte of the PC and pushes it again later, this core masks the PC
 // to 24 bits, and what the real MC68000 does there is not something this test can decide. Musashi must be built with
 // M68K_EMULATE_TRACE=1 (the trace exception is part of what is compared). See tools/run_diff_musashi.sh.
 
@@ -32,6 +33,12 @@
 extern "C" {
 #include "m68k.h"
 }
+
+#ifdef M68K_DIFF_ADDRESS_ERRORS
+constexpr bool kCompareAddressErrors = true;   // Musashi was built with M68K_EMULATE_ADDRESS_ERROR=1
+#else
+constexpr bool kCompareAddressErrors = false;
+#endif
 
 namespace {
 
@@ -74,7 +81,7 @@ namespace {
 constexpr unsigned kWindow = 0x10000;
 constexpr Address kPc = 0x1000;
 constexpr Address kHandlers = 0x20000;
-constexpr unsigned kHandlerSize = 8;
+constexpr unsigned kHandlerSize = 16;
 
 std::vector<unsigned char> g_base(kWindow);       // the image every program starts from (random bytes + vector table)
 std::vector<unsigned char> g_handlerImage(256 * kHandlerSize);
@@ -138,9 +145,14 @@ int main(int argc, char** argv) {
         g_base[v * 4 + 3] = static_cast<unsigned char>(handler);
         unsigned char* h = &g_handlerImage[v * kHandlerSize];
         const bool skipOpcode = v == 4 || v == 8 || v == 10 || v == 11;
-        const unsigned char code[8] = {0x4E, 0x73, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71};
+        unsigned char code[kHandlerSize] = {0x4E, 0x73, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71, 0x4E, 0x71};
         const unsigned char skip[8] = {0x54, 0xAF, 0x00, 0x02, 0x4E, 0x73, 0x4E, 0x71};  // ADDQ.L #2,2(A7) ; RTE
-        std::memcpy(h, skipOpcode ? skip : code, 8);
+        // address error: the frame has 14 bytes; skip the faulting opcode word in the stacked PC (offset 10), drop status word,
+        // access address and instruction word (8 bytes), RTE
+        const unsigned char addressError[10] = {0x54, 0xAF, 0x00, 0x0A, 0x4F, 0xEF, 0x00, 0x08, 0x4E, 0x73};   // ADDQ.L #2,10(A7) ; LEA 8(A7),A7 ; RTE
+        if (skipOpcode) std::memcpy(h, skip, 8);
+        else if (v == 3) std::memcpy(h, addressError, 10);
+        else std::memcpy(h, code, kHandlerSize);
     }
     std::memcpy(g_ref.data(), g_base.data(), kWindow);
     std::memcpy(g_ref.data() + kHandlers, g_handlerImage.data(), g_handlerImage.size());
@@ -208,7 +220,11 @@ int main(int argc, char** argv) {
         for (auto& x : d) x = randomValue(rng);
         for (auto& x : a) x = randomPointer(rng);
         if (rng() % 8 == 0) a[rng() % 7] = randomValue(rng);
-        const Long usp = randomPointer(rng) + 0x100, ssp = randomPointer(rng) + 0x100;
+        Long usp = randomPointer(rng) + 0x100, ssp = randomPointer(rng) + 0x100;
+        if (kCompareAddressErrors) {  // odd stack pointers too (pops and pushes that fail, errors while an exception frame is written)
+            if (rng() % 24 == 0) usp |= 1;
+            if (rng() % 24 == 0) ssp |= 1;
+        }
         const Word sr = static_cast<Word>(((rng() % 4 == 0) ? 0 : 0x2000) | ((rng() % 8) << 8) | (rng() % 32));
 
         if (only >= 0 && static_cast<long>(prog) != only) continue;
@@ -243,13 +259,23 @@ int main(int argc, char** argv) {
             const std::size_t refFrom = g_refTouched.size();
             const Address pcBefore = r.pc;
             pcs.push_back(pcBefore);
+            if ((mem.read16(pcBefore) & 0xFFF0) == 0xF620) {  // 68040 MOVE16, executed by Musashi even as a 68000 (a branch or jump landed on such a word)
+                dropped = true;
+                break;
+            }
             const StepResult res = cpu.step();
-            if (res.exception == kVecAddressError || res.reason == StopReason::Halted || res.reason == StopReason::Stopped) {
+            if ((!kCompareAddressErrors && res.exception == kVecAddressError) || res.reason == StopReason::Halted || res.reason == StopReason::Stopped) {
                 dropped = true;
                 break;
             }
             m68k_execute(1);
             ++compared;
+            if (kCompareAddressErrors && res.exception == kVecAddressError) {
+                // status word of the frame: bits 15-5 undefined (this core: from the opcode, Musashi: 0), bit 3 stale state in Musashi
+                const Address sp = r.a[7];
+                mem.write8(sp, g_ref[sp & 0xFFFFFF]);
+                mem.write8(sp + 1, static_cast<Byte>((mem.read8(sp + 1) & 0x17) | (g_ref[(sp + 1) & 0xFFFFFF] & 0xE8)));
+            }
             if (only >= 0)
                 std::printf("step %u at %06X %-28s ours: PC=%06X SR=%04X A7=%06X exc=%u | musashi: PC=%06X SR=%04X A7=%06X\n", step + 1, pcBefore,
                             decode(mem, pcBefore).text().c_str(), r.pc, r.sr, r.a[7], res.exception,

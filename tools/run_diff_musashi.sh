@@ -4,7 +4,9 @@
 #
 #   1. tools/diff_musashi.cpp      every opcode word, random states, ONE instruction at a time
 #   2. tools/diff_musashi_seq.cpp  random PROGRAMS of 2-10 instructions, compared after every instruction
-#                                  (needs Musashi built with trace emulation, so a second build of it is made)
+#
+# Musashi is built with trace emulation (M68K_EMULATE_TRACE=1) and address-error emulation
+# (M68K_EMULATE_ADDRESS_ERROR=1), so the trace exception and the 14-byte address-error frame are compared too.
 #
 #   tools/run_diff_musashi.sh [trials-per-opcode] [seed] [programs]
 #
@@ -20,13 +22,13 @@ if [ ! -d "$WORK/Musashi" ]; then
 fi
 cd "$WORK/Musashi"
 [ -f m68kops.c ] || { gcc -O1 -o m68kmake m68kmake.c && ./m68kmake . m68k_in.c >/dev/null; }
-[ -f m68kcpu.o ] || gcc -O2 -c m68kcpu.c m68kops.c softfloat/softfloat.c
-[ -f m68kcpu_t.o ] || { gcc -O2 -DM68K_EMULATE_TRACE=1 -c m68kcpu.c -o m68kcpu_t.o && gcc -O2 -DM68K_EMULATE_TRACE=1 -c m68kops.c -o m68kops_t.o; }
+OPTS="-DM68K_EMULATE_TRACE=1 -DM68K_EMULATE_ADDRESS_ERROR=1"
+[ -f m68kcpu_ae.o ] || { gcc -O2 $OPTS -c m68kcpu.c -o m68kcpu_ae.o && gcc -O2 $OPTS -c m68kops.c -o m68kops_ae.o && gcc -O2 -c softfloat/softfloat.c -o softfloat_ae.o; }
 SRC="$ROOT/src/cpu.cpp $ROOT/src/decoder.cpp $ROOT/src/forms.cpp $ROOT/src/format.cpp"
-g++ -std=c++20 -O2 -I "$ROOT/include" -I "$ROOT/src" -I "$WORK/Musashi" "$ROOT/tools/diff_musashi.cpp" $SRC \
-    m68kcpu.o m68kops.o softfloat.o -o "$WORK/m68k_diff_musashi"
-g++ -std=c++20 -O2 -I "$ROOT/include" -I "$ROOT/src" -I "$WORK/Musashi" "$ROOT/tools/diff_musashi_seq.cpp" $SRC \
-    m68kcpu_t.o m68kops_t.o softfloat.o -o "$WORK/m68k_diff_musashi_seq"
+OBJ="m68kcpu_ae.o m68kops_ae.o softfloat_ae.o"
+for t in diff_musashi diff_musashi_seq; do
+  g++ -std=c++20 -O2 -DM68K_DIFF_ADDRESS_ERRORS -I "$ROOT/include" -I "$ROOT/src" -I "$WORK/Musashi" "$ROOT/tools/$t.cpp" $SRC $OBJ -o "$WORK/m68k_$t"
+done
 echo "== single instructions =="
 "$WORK/m68k_diff_musashi" "$TRIALS" "$SEED"
 echo "== instruction sequences =="

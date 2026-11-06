@@ -457,6 +457,74 @@ void exceptions() {
         CHECK_EQ(t.r().d[5] & 0x1F, Long{0x16});  // read access, supervisor program space
     }
     {
+        Rig t;  // PC-relative operands are read from program space: function code 6 (supervisor program) in the frame
+        t.handler(3, "MOVE.W (A7),D5\nMOVE.L 2(A7),D6\nSTOP #$2700");
+        t.load("MOVE.W odd(PC),D0\nSTOP #$2700\nDC.B 0\nodd: DC.W 1", kCode);
+        t.cpu.run(100);
+        CHECK_EQ(t.r().d[5] & 0x1F, Long{0x16});
+        CHECK_EQ(t.r().d[6], static_cast<Long>(t.symbols.at("odd")));
+        Rig u;  // ... but d16(An) is data space
+        u.handler(3, "MOVE.W (A7),D5\nSTOP #$2700");
+        u.load("MOVEA.L #$2001,A0\nMOVE.W 0(A0),D0", kCode);
+        u.cpu.run(100);
+        CHECK_EQ(u.r().d[5] & 0x1F, Long{0x15});
+    }
+    {
+        Rig t;  // MOVE.L / MOVEM.L to -(An) write the low word first: an odd address is detected at ea+2
+        t.handler(3, "MOVE.L 2(A7),D6\nSTOP #$2700");
+        t.load("MOVEA.L #$2005,A0\nMOVE.L D1,-(A0)", kCode);   // -(A0) = $2001
+        t.cpu.run(100);
+        CHECK_EQ(t.r().d[6], Long{0x2003});
+        Rig u;
+        u.handler(3, "MOVE.L 2(A7),D6\nSTOP #$2700");
+        u.load("MOVEA.L #$2005,A0\nMOVEM.L D0-D1,-(A0)", kCode);
+        u.cpu.run(100);
+        CHECK_EQ(u.r().d[6], Long{0x2003});
+        Rig v;   // a word write is checked at its own address
+        v.handler(3, "MOVE.L 2(A7),D6\nSTOP #$2700");
+        v.load("MOVEA.L #$2005,A0\nMOVE.W D1,-(A0)", kCode);   // -(A0) = $2003
+        v.cpu.run(100);
+        CHECK_EQ(v.r().d[6], Long{0x2003});
+    }
+    {
+        Rig t;  // CMPM: the address registers are incremented before their access, so an address error leaves them moved
+        t.load("MOVEA.L #$2000,A0\nMOVEA.L #$2001,A1\nCMPM.W (A0)+,(A1)+", kCode);     // the destination read fails
+        t.cpu.run(100);
+        CHECK_EQ(t.r().a[0], Long{0x2002});
+        CHECK_EQ(t.r().a[1], Long{0x2003});
+        Rig u;
+        u.load("MOVEA.L #$2001,A0\nMOVEA.L #$2000,A1\nCMPM.W (A0)+,(A1)+", kCode);     // the source read fails
+        u.cpu.run(100);
+        CHECK_EQ(u.r().a[0], Long{0x2003});
+        CHECK_EQ(u.r().a[1], Long{0x2000});
+    }
+    {
+        Rig t;  // UNLK / RTS: the stack pointer has moved when the pop fails (user mode: A7 is the USP)
+        t.handler(3, "MOVE USP,A1\nSTOP #$2700");
+        t.load("ANDI #$DFFF,SR\nMOVEA.L #$2001,A0\nUNLK A0", kCode);
+        t.cpu.run(100);
+        CHECK_EQ(t.r().a[1], Long{0x2005});
+        Rig u;
+        u.handler(3, "MOVE USP,A1\nSTOP #$2700");
+        u.load("ANDI #$DFFF,SR\nMOVEA.L #$2001,A7\nRTS", kCode);
+        u.cpu.run(100);
+        CHECK_EQ(u.r().a[1], Long{0x2005});
+    }
+    {
+        Rig t;  // LINK: the displacement is fetched after the push, so the stacked PC is the instruction address + 2
+        t.handler(3, "MOVE.L 10(A7),D6\nSTOP #$2700");
+        t.load("ANDI #$DFFF,SR\nMOVEA.L #$2001,A7\nlk: LINK A6,#-4", kCode);
+        t.cpu.run(100);
+        CHECK_EQ(t.r().d[6], static_cast<Long>(t.symbols.at("lk")) + 2);
+    }
+    {
+        Rig t;  // CLR sets its flags after the write: an address error leaves the old flags in the stacked SR
+        t.handler(3, "MOVE.W 8(A7),D6\nSTOP #$2700");
+        t.load("MOVEA.L #$2001,A0\nMOVE.W #8,CCR\nCLR.W (A0)", kCode);
+        t.cpu.run(100);
+        CHECK_EQ(t.r().d[6] & 0x1F, Long{0x08});
+    }
+    {
         Rig t;  // a fault while stacking an exception frame halts the processor
         t.load("MOVEA.L #$8001,A7\nTRAP #0\nNOP", kCode);
         const RunResult r = t.cpu.run(100);
