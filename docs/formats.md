@@ -37,12 +37,23 @@ von Anzahl bis Daten).
   kontrolliert; Fehler nennen die Zeilennummer. Aneinandergrenzende Datensätze werden zu einem Segment
   zusammengefasst.
 
-## Amiga-Hunk (Eingabe und Ausgabe, geplant)
+## Amiga-Hunk (Eingabe)
 
-Ausführbare Amiga-Dateien bestehen aus Blöcken (`HUNK_HEADER`, `HUNK_CODE`, `HUNK_DATA`, `HUNK_BSS`,
-`HUNK_RELOC32`, `HUNK_SYMBOL`, `HUNK_END`). Der Lader legt die Segmente an eine Basisadresse und wendet die
-Relokationen an; Symbole aus `HUNK_SYMBOL` können als Namen im Disassembler dienen. Details in
-[amiga500.md](amiga500.md).
+`m68ktool dis` erkennt AmigaDOS-Programme am Kennwort `$000003F3` und lädt sie (`m68k/hunk.hpp`):
+
+- unterstützte Blöcke: `HUNK_HEADER`, `HUNK_CODE`, `HUNK_DATA`, `HUNK_BSS`, `HUNK_RELOC32`, `HUNK_SYMBOL`,
+  `HUNK_DEBUG` und `HUNK_NAME` (übersprungen), `HUNK_END`; die Speicherattribute (Chip/Fast) in den oberen
+  Bits der Größen werden ignoriert
+- die Hunks werden ab `--org` (Standard 0) **nacheinander** abgelegt, jeweils auf 4 Byte ausgerichtet; jede
+  `RELOC32`-Stelle bekommt die Basisadresse ihres Ziel-Hunks addiert (BSS wird mit Nullen gefüllt)
+- Einstiegspunkt ist der Anfang des ersten CODE-Hunks; `HUNK_SYMBOL`-Namen werden Labelnamen (ungültige Zeichen
+  werden zu `_`, Namen wie `D0` bekommen ein `_` vorn, doppelte Namen eine Adresssuffix)
+- alles andere (Overlays, Bibliotheken, andere Relokationsarten, falsche Längen, abgeschnittene Dateien) wird mit
+  Fehlermeldung abgelehnt, nie außerhalb der Datei gelesen
+- **nicht umgesetzt:** Hunk-*Ausgabe* des Assemblers (`SECTION`, `XDEF`, Relokationen)
+
+Die Hunk-Verarbeitung ist mit synthetischen Dateien getestet (`tests/test_hunk.cpp`); ein echtes Amiga-Programm
+war dafür nicht verfügbar.
 
 ## Systemabbilder
 

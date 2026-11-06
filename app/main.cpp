@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "m68k/disassembler.hpp"
 #include "m68k/expression.hpp"
 #include "m68k/format.hpp"
+#include "m68k/hunk.hpp"
 #include "m68k/image_io.hpp"
 #include "m68k/version.hpp"
 
@@ -46,7 +48,8 @@ void printUsage(std::ostream& out) {
         << "  (without -o/--srec the result is written to <source>.bin)\n"
         << "\n"
         << "dis options:\n"
-        << "  --org <addr>     load address of a raw binary (default 0); S-record files carry their own\n"
+        << "  --org <addr>     load address of a raw binary or of an Amiga hunk file (default 0);\n"
+        << "                   S-record files carry their own addresses\n"
         << "  --start <addr>   first address to disassemble (default: start of the image)\n"
         << "  --end <addr>     address after the last byte (default: end of the image)\n"
         << "  -e <addr>        additional entry point (repeatable); the default entry is the start\n"
@@ -160,6 +163,7 @@ int cmdDis(Args args) {
     m68k::Memory memory;
     m68k::Address lo = 0, hi = 0;
     std::optional<m68k::Address> imageEntry;
+    std::vector<m68k::HunkSymbol> hunkSymbols;
     if (m68k::looksLikeSRecordFile(image)) {
         const m68k::Image img = m68k::parseSRecords(m68k::readTextFile(image));
         m68k::loadSegments(memory, img.segments);
@@ -174,14 +178,39 @@ int cmdDis(Args args) {
         }
     } else {
         const std::vector<m68k::Byte> bytes = m68k::readBinaryFile(image);
-        memory.load(org, bytes);
-        lo = org;
-        hi = org + static_cast<m68k::Address>(bytes.size());
+        if (m68k::looksLikeHunkFile(bytes)) {
+            // AmigaDOS executable: relocate to --org, use the hunk symbols as label names
+            const m68k::HunkImage hunk = m68k::loadHunkFile(bytes, org);
+            m68k::loadSegments(memory, hunk.segments);
+            lo = hunk.hunks.empty() ? org : hunk.hunks.front().address;
+            hi = hunk.end;
+            imageEntry = hunk.entry;
+            hunkSymbols = hunk.symbols;
+            for (const m68k::HunkInfo& h : hunk.hunks) {
+                std::cerr << image << ": " << h.type << " hunk at " << m68k::formatHex(h.address, 6, m68k::NumberStyle::Dollar)
+                          << ", " << h.size << " bytes\n";
+            }
+        } else {
+            memory.load(org, bytes);
+            lo = org;
+            hi = org + static_cast<m68k::Address>(bytes.size());
+        }
     }
     if (!haveStart) start = lo;
     if (!haveEnd) end = hi;
 
     m68k::Disassembler dis(memory, start, end);
+    {
+        // hunk symbols become label names; duplicates and clashes get an address suffix
+        std::set<std::string> used;
+        std::set<m68k::Address> seen;
+        for (const m68k::HunkSymbol& sym : hunkSymbols) {
+            if (sym.address < start || sym.address >= end || !seen.insert(sym.address).second) continue;
+            std::string name = m68k::asmSymbolName(sym.name);
+            if (!used.insert(name).second) name += "_" + m68k::hexDigits(sym.address, 6), used.insert(name);
+            dis.addSymbol(sym.address, name);
+        }
+    }
     for (const m68k::Address e : entries) dis.addEntry(e);
     bool commented = false;
     if (!commentFile.empty()) {

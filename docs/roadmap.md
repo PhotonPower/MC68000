@@ -17,9 +17,9 @@ Motorola S-Records. Emulator, Monitor und Agenten-Schnittstelle fehlen noch.
 - Ausgabeformate: Raw-Binary, S-Record, Listing, Symboltabelle
 - Tests: Einzelbefehle, exhaustiver Roundtrip, Robustheit, Kreuzprüfung gegen `objdump` und `as`
 
-Noch offen aus diesem Meilenstein (Amiga-Hunk, siehe [amiga500.md](amiga500.md)):
-- **Hunk-Lader** (Relozieren) als Eingabeformat für den Disassembler und den späteren Emulator
-- **Hunk-Ausgabe** des Assemblers (`SECTION`, `XDEF`, Relokationen)
+Amiga-Hunk (siehe [amiga500.md](amiga500.md)):
+- **Hunk-Lader** (Relozieren, Symbole) – erledigt; Eingabeformat für den Disassembler, später für den Emulator
+- noch offen: **Hunk-Ausgabe** des Assemblers (`SECTION`, `XDEF`, Relokationen)
 - optional: Optimierungen des Assemblers (`ADD #n` → `ADDQ`, `MOVE #n` → `MOVEQ`, absolut → PC-relativ), per Schalter
 
 ## Meilenstein 0.3 – Emulator

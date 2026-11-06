@@ -27,7 +27,7 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
   alternativ linearer Durchlauf
 - Labels und Querverweise, Kommentardatei (`Adresse,"Text"`), Zahlenstile
 - Ausgabe als lesbares Listing **oder** als wieder assemblierbarer Quelltext (`--asm`, byte-genau)
-- Eingabe: Raw-Binary oder S-Record
+- Eingabe: Raw-Binary, S-Record oder **Amiga-Hunk-Programm** (wird relokiert, Symbole werden Labels)
 
 **Bibliothek `m68kcore`:** `Memory` (16 MiB, Big-Endian), `decode()`, `encodeInstruction()`, `assemble()`,
 `Disassembler`, S-Record-Ein-/Ausgabe, Ausdrucksauswerter.
@@ -43,7 +43,7 @@ und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
   Breakpoints, Watchpoints, Checkpoints; nur Register und Speicher zählen, **kein Timing**
 - **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md)) und **Agenten-Schnittstelle**
   (`m68ktool serve`, [docs/agent-protocol.md](docs/agent-protocol.md))
-- **Amiga-Hunk-Lader** und -Ausgabe, **Reverse Engineering mit lokalem LLM**
+- Amiga-Hunk-*Ausgabe* des Assemblers, **Reverse Engineering mit lokalem LLM**
   ([docs/reverse-engineering.md](docs/reverse-engineering.md))
 
 ## Schnellstart

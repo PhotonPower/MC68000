@@ -17,6 +17,7 @@ Die Tests brauchen kein externes Framework; `tests/test_util.hpp` stellt `CHECK`
 | `assembler`  | **111 Zeilen mit Bytes, die GNU `as` erzeugt hat** (`tests/gnu_verified.inc`), Konventionen (Standardgröße, `SP`, `MOVE`→`MOVEA` usw.), Labels, Vorwärtsreferenzen, Größenwahl und Wachstum von Sprüngen, lokale Labels, `ORG`/`EVEN`/`END`/`DC`/`DS`, Listing, Symboltabelle, über 30 Fehlerfälle, Robustheit gegen 7000 zufällige Quelltexte |
 | `roundtrip`  | **exhaustiv:** alle 65536 ersten Opcode-Wörter mit 6 Sätzen von Erweiterungswörtern (rund 248 000 gültige Befehle); was der Dekoder als Befehl erkennt, muss der vollständige Assembler zu denselben Bytes zurückübersetzen |
 | `image_io`   | S-Record-Lesen/-Schreiben, Prüfsummen und Fehler mit Zeilennummer, Dateizugriff |
+| `hunk`       | Amiga-Hunk-Lader: Platzierung und Ausrichtung, Relokation, BSS, Symbole, Speicherflags in Größen, Namen für den Assembler, **jede Abkürzung der Datei** und weitere beschädigte Dateien werden abgelehnt |
 | `disassembler` | Ablaufanalyse (Code/Daten), zweiter Einstiegspunkt, überlappender Code, Symbole, Kommentare, Listing-Optionen, linearer Modus, Befehle über das Bereichsende, **Byte-genauer Roundtrip `assemble(--asm) == Speicher`** für 300 zufällige Speicher (linear) und 150 (Ablaufanalyse mit zufälligen Einstiegspunkten) |
 | `cli_*`      | `m68ktool version`; Beispielprogramm assemblieren → disassemblieren (`--asm`) → erneut assemblieren → Dateien identisch |
 

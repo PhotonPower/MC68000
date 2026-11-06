@@ -46,6 +46,7 @@ add_library(m68kcore STATIC
   src/encoder.cpp
   src/expression.cpp
   src/forms.cpp
+  src/hunk.cpp
   src/format.cpp
   src/image_io.cpp)
 target_include_directories(m68kcore PUBLIC include)

@@ -34,7 +34,7 @@ examples/hello.s:17: error: unknown instruction or directive 'MOVEE'
 
 | Option            | Bedeutung                                                                      |
 |-------------------|--------------------------------------------------------------------------------|
-| `--org <Adresse>` | Ladeadresse einer Raw-Binärdatei (Standard `0`); S-Record-Dateien tragen ihre Adressen selbst |
+| `--org <Adresse>` | Ladeadresse einer Raw-Binärdatei oder eines **Amiga-Hunk-Programms** (Standard `0`; Hunks werden relokiert, Symbole werden Labels); S-Record-Dateien tragen ihre Adressen selbst |
 | `--start <Adr.>`, `--end <Adr.>` | Bereich, der ausgegeben wird (Standard: das ganze Abbild; `--end` ist exklusiv) |
 | `-e <Adresse>`    | zusätzlicher Einstiegspunkt der Ablaufanalyse (mehrfach möglich)               |
 | `-c <Datei>`      | Kommentardatei ([formats.md](formats.md)); kommentierte Adressen sind Einstiegspunkte |

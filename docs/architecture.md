@@ -47,6 +47,7 @@ derselben Bibliothek.
 | `assembler.hpp`                     | Zeilenparser, Symboltabelle, Mehrpass, `AssemblyResult`      | fertig  |
 | `disassembler.hpp`                  | Ablaufanalyse, Querverweise, Kommentare, Ausgabe (`render`)  | fertig  |
 | `image_io.hpp`                      | Dateien lesen/schreiben, S-Record                            | fertig  |
+| `hunk.hpp`                          | Amiga-Hunk-Lader (Relokation, Symbole)                       | fertig  |
 | `cpu.hpp`                           | `Registers`, `Cpu` (Ausführung, Ausnahmen, Breakpoints)      | geplant |
 | `snapshot.hpp`, `json.hpp`, `session.hpp` | Zustand speichern/laden, Agenten-Protokoll             | geplant |
 | `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
