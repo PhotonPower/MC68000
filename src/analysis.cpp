@@ -324,4 +324,131 @@ std::vector<RoutineInfo> Analysis::routines() const {
     return out;
 }
 
+
+// ---- data types ---------------------------------------------------------------------------------------------------------------
+
+namespace {
+bool textChar(std::uint8_t b) { return (b >= 0x20 && b < 0x7F) || b == 0x09 || b == 0x0A || b == 0x0D; }
+bool letterOrSpace(std::uint8_t b) { return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == ' '; }
+}  // namespace
+
+std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& claimed) const {
+    auto free = [&](Address a) {
+        return inRange(a) && state_[a - from_] == 0 && !(isData_ && isData_(a)) && !(claimed && claimed(a));
+    };
+    std::vector<DataGuess> out;
+    std::vector<bool> used(to_ - from_, false);
+
+    // strings
+    for (Address a = from_; a < to_;) {
+        if (!free(a) || !textChar(mem_.read8(a))) {
+            ++a;
+            continue;
+        }
+        Address e = a;
+        while (e < to_ && free(e) && textChar(mem_.read8(e))) ++e;
+        const unsigned chars = e - a;
+        unsigned nul = 0;
+        while (e + nul < to_ && nul < 3 && free(e + nul) && mem_.read8(e + nul) == 0) ++nul;
+        const bool terminated = nul > 0;
+        const bool referenced = refs_.count(a) != 0;
+        unsigned letters = 0;
+        for (Address i = a; i < e; ++i) letters += letterOrSpace(mem_.read8(i)) ? 1U : 0U;
+        // 'NuNuNu' is a row of RTS instructions, not a string: a period of 1 or 2 only counts if the address is referenced
+        bool periodic = chars >= 4;
+        for (Address i = a + 2; i < e && periodic; ++i) periodic = mem_.read8(i) == mem_.read8(i - 2);
+        const bool enough = chars >= 4 && letters * 10 >= chars * 6 && (referenced || terminated || chars >= 12) && (!periodic || referenced);
+        if (!enough) {
+            a = e;
+            continue;
+        }
+        // NUL padding up to an even length; the terminator itself is always part of the string
+        unsigned total = chars + (terminated ? 1U : 0U);
+        unsigned pad = terminated ? nul - 1 : 0;
+        while (pad > 0 && (total & 1U)) {
+            ++total;
+            --pad;
+        }
+        DataGuess g;
+        g.kind = DataGuess::Kind::Text;
+        g.start = a;
+        g.length = total;
+        g.reason = std::string(referenced ? "referenced by an instruction, " : "") + (terminated ? "NUL-terminated" : "long run of printable characters");
+        for (Address i = a; i < e && g.preview.size() < 40; ++i) g.preview += static_cast<char>(mem_.read8(i));
+        out.push_back(g);
+        for (unsigned i = 0; i < total; ++i) used[a - from_ + i] = true;
+        a += total;
+    }
+
+    // tables of string pointers behind a data reference; the strings they point to may be short ("No", "OK")
+    std::set<Address> textStarts;
+    for (const DataGuess& g : out)
+        if (g.kind == DataGuess::Kind::Text) textStarts.insert(g.start);
+    auto shortString = [&](Address t, unsigned& length) {
+        unsigned n = 0;
+        while (n < 3 && t + n < to_ && free(t + n) && !used[t + n - from_] && textChar(mem_.read8(t + n))) ++n;
+        if (n == 0 || t + n >= to_ || !free(t + n) || used[t + n - from_] || mem_.read8(t + n) != 0) return false;
+        length = n + 1;
+        return true;
+    };
+    std::vector<DataGuess> found;
+    for (const Address r : refs_) {
+        if (!inRange(r) || (r & 1U) || !free(r) || used[r - from_]) continue;
+        unsigned n = 0, real = 0;
+        std::map<Address, unsigned> shortOnes;
+        for (Address p = r; p + 4 <= to_ && free(p) && free(p + 3) && !used[p - from_] && !used[p + 3 - from_]; p += 4) {
+            if (p != r && refs_.count(p)) break;
+            const Long v = mem_.read32(p);
+            const Address t = v & kAddressMask;
+            if (v != t || !inRange(t)) break;
+            unsigned len = 0;
+            if (textStarts.count(t)) ++real;
+            else if (shortString(t, len)) shortOnes[t] = len;
+            else break;
+            ++n;
+        }
+        if (!((n >= 2 && real >= 1) || n >= 3)) continue;
+        DataGuess g;
+        g.kind = DataGuess::Kind::Pointers;
+        g.start = r;
+        g.length = n * 4;
+        g.reason = "table of " + std::to_string(n) + " string pointers";
+        found.push_back(g);
+        for (unsigned i = 0; i < g.length; ++i) used[r - from_ + i] = true;
+        for (const auto& [t, len] : shortOnes) {
+            if (used[t - from_]) continue;
+            DataGuess sg;
+            sg.kind = DataGuess::Kind::Text;
+            sg.start = t;
+            sg.length = len;
+            sg.reason = "pointed to by a table of string pointers";
+            for (unsigned i = 0; i + 1 < len; ++i) sg.preview += static_cast<char>(mem_.read8(t + i));
+            found.push_back(sg);
+            for (unsigned i = 0; i < len; ++i) used[t - from_ + i] = true;
+        }
+    }
+    out.insert(out.end(), found.begin(), found.end());
+
+    // runs of zero bytes
+    for (Address a = from_; a < to_;) {
+        if (!free(a) || used[a - from_] || mem_.read8(a) != 0) {
+            ++a;
+            continue;
+        }
+        Address e = a;
+        while (e < to_ && free(e) && !used[e - from_] && mem_.read8(e) == 0) ++e;
+        if (e - a >= 16) {
+            DataGuess g;
+            g.kind = DataGuess::Kind::Zeros;
+            g.start = a;
+            g.length = e - a;
+            g.reason = "zero fill";
+            out.push_back(g);
+        }
+        a = e;
+    }
+    std::sort(out.begin(), out.end(), [](const DataGuess& x, const DataGuess& y) { return x.start < y.start; });
+    return out;
+}
+
 }  // namespace m68k

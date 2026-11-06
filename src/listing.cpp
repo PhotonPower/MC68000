@@ -248,8 +248,18 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                             body << dcBytes(p, 1) << "\n";
                             p += 1;
                         } else {
-                            body << "        DC.B     " << lit << "\n";
-                            p += static_cast<Address>(used);
+                            Address next = p + static_cast<Address>(used);
+                            std::string line = "        DC.B     " + lit;
+                            if (next < end && view.read8(next) == 0 && !names.count(next)) {   // the terminator belongs on the same line
+                                line += ",0";
+                                ++next;
+                                if (next < end && view.read8(next) == 0 && (next & 1U) != 0 && !names.count(next)) {   // padding byte at an odd address: EVEN writes it
+                                    line += "\n        EVEN";
+                                    ++next;
+                                }
+                            }
+                            body << line << "\n";
+                            p = next;
                         }
                         break;
                     }

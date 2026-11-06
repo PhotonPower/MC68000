@@ -7,6 +7,9 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Datentyp-Erkennung** (`Analysis::guessData`, Befehl `data_regions`): Strings (referenziert, NUL-terminiert oder lang), Tabellen von String-Zeigern (auch mit kurzen Strings) und Nullbereiche; `apply:true`
+  trägt Text und Zeigertabellen als Datenbereiche ein. Das Listing schreibt Strings als `DC.B "…",0` (mit `EVEN` für das Füllbyte). Der Orchestrator übernimmt die Vorschläge selbst (`--no-auto-data`).
+  Test `datatypes` (3101 Prüfungen, darunter 300 Zufallsprogramme und 400 Zufallsbilder), Orchestrator-Tests.
 - **Erkennung von Sprungtabellen** in der Codefluss-Analyse: Branch-Tabellen (`JMP d(PC,Dn)` auf `BRA`-Folge) und Offset-Tabellen (`MOVE.W tab(PC,Dn),Dm` + `JMP base(PC,Dm)`) werden erkannt und
   ihre Ziele als Code verfolgt, Zeigertabellen werden vorgeschlagen (`followed:false`) und nach `ann_data kind=pointers` verfolgt. Neuer Befehl `jump_tables`, Feld `jump_tables` in `analyze`,
   Tabellenkommentare und `DC.W`-Zeilen mit Zielen im Listing, Orchestrator markiert Vorschläge selbst (`--no-auto-tables`). Test `jumptable` (5021 Prüfungen).

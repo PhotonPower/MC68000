@@ -424,6 +424,60 @@ class PointerTableTest(unittest.TestCase):
         self.assertIn("1 routines", text)
 
 
+STRINGDEMO = """\
+        ORG $1000
+start:  LEA     msg(PC),A0
+        LEA     names(PC),A1
+        RTS
+msg:    DC.B    "Hello, Amiga world",0
+        EVEN
+n0:     DC.B    "Alice",0
+n1:     DC.B    "Bob",0
+        EVEN
+names:  DC.L    n0,n1,msg
+"""
+
+
+class DataRegionTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not os.path.exists(M68KTOOL):
+            raise unittest.SkipTest(f"m68ktool not found at {M68KTOOL} (set M68KTOOL)")
+
+    def run_demo(self, *extra):
+        d = tempfile.mkdtemp()
+        src, binary, project, out = (os.path.join(d, n) for n in ("t.s", "t.bin", "t.proj.json", "t_annotated.s"))
+        with open(src, "w") as f:
+            f.write(STRINGDEMO)
+        r = subprocess.run([M68KTOOL, "asm", src, "-o", binary], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mock = MockOllama({})
+        url = mock.start()
+        try:
+            code, text = run_main(["--bin", binary, "--org", "0x1000", "--host", url, "--model", "mock", "--m68ktool", M68KTOOL,
+                                   "--project", project, "--out", out, "--max-turns", "2", *extra])
+        finally:
+            mock.stop()
+        return code, text, project, out
+
+    def test_strings_are_marked(self):
+        code, text, project, out = self.run_demo()
+        self.assertEqual(code, 0, text)
+        self.assertIn("4 data regions marked: 1 pointers, 3 text", text)
+        with open(project, encoding="utf-8") as f:
+            data = json.load(f)
+        kinds = sorted(r["kind"] for r in data["data"])
+        self.assertEqual(kinds, ["pointers", "text", "text", "text"])
+        with open(out, encoding="utf-8") as f:
+            listing = f.read()
+        self.assertIn('DC.B     "Hello, Amiga world",0', listing)
+        self.assertIn("VERIFIED", listing)
+
+    def test_can_be_switched_off(self):
+        code, text, project, _ = self.run_demo("--no-auto-data")
+        self.assertNotIn("data regions marked", text)
+
+
 class HelperTest(unittest.TestCase):
     def test_argument_coercion(self):
         c, notes = annotate.prepare_args("run_routine", {"addr": "0x1000", "max_instructions": "500", "keep_state": "true", "x": 1,

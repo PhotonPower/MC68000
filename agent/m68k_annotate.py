@@ -597,6 +597,9 @@ MC68000 / Amiga facts that are easy to get wrong:
 The listing may contain "jump table" comments: the analysis found a table behind an indexed jump (branch table, or words that are offsets from a base address). Its
 entries are handlers, not routines that anybody calls: describe what each case does and name the case labels (name_label), and document the table as a data region.
 
+Strings and tables of string pointers that the analysis recognised are already shown as text (DC.B "...",0) and DC.L lists. Give them a meaningful name with mark_data
+(the same address, kind text or pointers, a name) and say what they are used for.
+
 Do not finish early. Before finish_routine: give EVERY label a name (loops, branch targets still called loc_/sub_/data_), name every
 memory location the code uses (name_variable, with a comment on its meaning), mark tables and strings (mark_data) and add a short comment
 (add_comment) to every non-obvious step. finish_routine checks this once and tells you what is missing.
@@ -676,7 +679,19 @@ class Annotator:
                  + (f', {r["jump_tables"]} jump tables' if r.get("jump_tables") else ""))
         if not a.no_auto_tables:
             self.follow_pointer_tables(entries)
+        if not a.no_auto_data:
+            self.mark_data_regions(entries)
         s.ok(cmd="checkpoint", name="baseline")
+
+    def mark_data_regions(self, entries):
+        """Strings (referenced, NUL-terminated or long) and tables of string pointers that the analysis recognises are marked as data regions, so the
+        model sees them as text in the listing and no routine analysis can mistake them for code. Zero fill needs no annotation (the listing writes DS.B)."""
+        s = self.s
+        r = s.ok(cmd="data_regions", apply=True)
+        if r.get("applied"):
+            s.ok(cmd="analyze", entries=entries, reset=True)
+            kinds = Counter(x["kind"] for x in r["regions"] if x.get("applied"))
+            self.say(f'{r["applied"]} data regions marked: ' + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())))
 
     def follow_pointer_tables(self, entries):
         """Tables of code addresses that the analysis only suggests (it found longwords that look like addresses of code behind a data
@@ -942,6 +957,7 @@ def main(argv=None):
     p.add_argument("--machine", choices=["amiga500", "generic"], default="amiga500", help="memory map (amiga500: chip RAM, custom/CIA registers, ROM)")
     p.add_argument("--chip-kb", type=int, default=512, help="chip RAM of the amiga500 machine")
     p.add_argument("--no-auto-tables", action="store_true", help="do not mark and follow tables of code addresses that the analysis only suggests")
+    p.add_argument("--no-auto-data", action="store_true", help="do not mark the strings and string-pointer tables that the analysis recognises as data regions")
     p.add_argument("--no-os", action="store_true", help="do not emulate exec/dos library calls (they then run into unmapped memory)")
     p.add_argument("--rom", help="Kickstart ROM image (amiga500 only; your own copy, it is not part of this project)")
     p.add_argument("--entry", action="append", help='entry point (repeatable), default: the start of the program, e.g. "0x20000"')

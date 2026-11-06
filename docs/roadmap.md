@@ -65,7 +65,7 @@ Sprungtabellen (Branch- und Offset-Tabellen automatisch, Zeigertabellen als Vors
 
 Offen:
 - **Erprobung mit einem echten Modell** (bisher nur Mock) und Feinschliff von Prompt und Parametern
-- Erkennung von Datentypen (Text, Strukturtabellen)
+- Erkennung weiterer Datentypen (Zahlentabellen, Strukturen, Bitplanes, Samples); Text und String-Zeiger sind seit 0.5 erledigt
 
 ## Danach (Ideen)
 

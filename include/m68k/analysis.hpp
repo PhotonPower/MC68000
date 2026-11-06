@@ -33,6 +33,20 @@ struct JumpTable {
     std::vector<Address> targets;   ///< code address each entry leads to
 };
 
+/// A guess about the type of bytes that are neither code nor annotated.
+struct DataGuess {
+    enum class Kind {
+        Text,      ///< a string (printable characters, usually NUL-terminated)
+        Zeros,     ///< a run of zero bytes (padding, an empty buffer)
+        Pointers   ///< a table of longword addresses of strings
+    };
+    Kind kind = Kind::Text;
+    Address start = 0;
+    unsigned length = 0;       ///< includes a terminating NUL (and NUL padding up to an even length)
+    std::string reason;        ///< why this was guessed
+    std::string preview;       ///< Text: the first characters
+};
+
 struct RoutineInfo {
     Address entry = 0;
     Address start = 0, end = 0;          ///< extent: lowest address and the address after the highest instruction
@@ -73,6 +87,9 @@ public:
     [[nodiscard]] const std::set<Address>& entries() const { return entries_; }
     /// Jump tables found (branch tables and offset tables are followed; pointer tables found by scanning are only suggested).
     [[nodiscard]] const std::vector<JumpTable>& jumpTables() const { return tables_; }
+    /// Types of the bytes that are not code: strings, zero runs and tables of string pointers. `claimed(a)` is true for bytes that are annotated already.
+    /// Guesses are never certain: a string is recognised if it is referenced by an instruction, ends in a NUL, or is long and mostly letters.
+    [[nodiscard]] std::vector<DataGuess> guessData(const std::function<bool(Address)>& claimed = nullptr) const;
     /// True for the bytes of an offset table (data between the code).
     [[nodiscard]] bool isTableData(Address a) const;
 

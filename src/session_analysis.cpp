@@ -25,7 +25,7 @@ std::string hexAddrS(Address a) {
 }  // namespace
 
 bool Session::Impl::isAnalysisCommand(const std::string& cmd) const {
-    static const char* names[] = {"analyze", "jump_tables", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
+    static const char* names[] = {"analyze", "jump_tables", "data_regions", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
                                   "ann_comment", "ann_remove", "ann_title", "ann_list", "ann_save", "ann_load"};
     for (const char* n : names)
         if (cmd == n) return true;
@@ -95,6 +95,34 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         if (!s.analysis_) throw SessionError("no analysis yet: use 'analyze' first");
         return *s.analysis_;
     };
+
+    if (cmd == "data_regions") {
+        const Analysis& an = needAnalysis();
+        const bool apply = flag("apply");
+        const std::vector<DataGuess> guesses = an.guessData([&ann](Address a) { return ann.expressionFor(a).has_value(); });
+        Json arr = Json::array();
+        unsigned applied = 0;
+        for (const DataGuess& g : guesses) {
+            Json e = Json::object();
+            const char* kind = g.kind == DataGuess::Kind::Text ? "text" : g.kind == DataGuess::Kind::Pointers ? "pointers" : "zeros";
+            e.set("addr", hexAddrS(g.start)).set("length", g.length).set("kind", kind).set("reason", g.reason);
+            if (!g.preview.empty()) e.set("preview", g.preview);
+            if (apply && g.kind != DataGuess::Kind::Zeros) {  // zero runs need no annotation: the listing writes them as DS.B
+                DataRegion region;
+                region.address = g.start;
+                region.length = g.length;
+                region.kind = g.kind == DataGuess::Kind::Text ? DataKind::Text : DataKind::Pointers;
+                const bool done = !ann.setData(region).has_value();
+                e.set("applied", done);
+                if (done) ++applied;
+            }
+            arr.push(e);
+        }
+        Json j = Json::object();
+        j.set("regions", arr);
+        if (apply) j.set("applied", applied);
+        return j;
+    }
 
     if (cmd == "jump_tables") {
         const Analysis& an = needAnalysis();
