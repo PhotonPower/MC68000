@@ -7,6 +7,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Emulator-Kern** (`m68k::Cpu`, Meilenstein 0.3 erster Teil): alle Befehle, Ausnahmen mit Stapelrahmen, Interrupts, `STOP`,
+  Trace, Breakpoints/Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks. Funktional, ohne Timing.
+- Differenztest gegen **Musashi** (`tools/diff_musashi.cpp`, `tools/run_diff_musashi.sh`): alle 65536 Opcodes, zufällige
+  Zustände, Vergleich aller Register und jedes geschriebenen Bytes; 0 Abweichungen. CI-Job `emulator-diff`.
+- Unit-Tests `cpu` (rund 52 000 Prüfungen), darunter ein Abgleich mit dem Dekoder für alle Opcodes.
 - **Amiga-Hunk-Lader** (`m68k/hunk.hpp`): `HUNK_HEADER/CODE/DATA/BSS/RELOC32/SYMBOL/DEBUG/NAME/END`, Relokation, Symbole als
   Labels; `m68ktool dis` erkennt Hunk-Dateien. Getestet mit synthetischen Dateien, inklusive aller Abkürzungen.
 - **Meilenstein 0.2:** Dekoder (`decode()`), Encoder, Mehrpass-Assembler, Ausdrucksauswerter, Disassembler mit

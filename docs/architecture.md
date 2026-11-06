@@ -48,8 +48,8 @@ derselben Bibliothek.
 | `disassembler.hpp`                  | Ablaufanalyse, Querverweise, Kommentare, Ausgabe (`render`)  | fertig  |
 | `image_io.hpp`                      | Dateien lesen/schreiben, S-Record                            | fertig  |
 | `hunk.hpp`                          | Amiga-Hunk-Lader (Relokation, Symbole)                       | fertig  |
-| `cpu.hpp`                           | `Registers`, `Cpu` (Ausführung, Ausnahmen, Breakpoints)      | geplant |
-| `snapshot.hpp`, `json.hpp`, `session.hpp` | Zustand speichern/laden, Agenten-Protokoll             | geplant |
+| `cpu.hpp`                           | `Registers`, `Cpu` (Ausführung, Ausnahmen, Interrupts, Breakpoints, Hooks) | fertig  |
+| `snapshot.hpp`, `json.hpp`, `session.hpp` | Zustand speichern/laden, Agenten-Protokoll (Meilenstein 0.3, zweiter Teil) | geplant |
 | `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
 
 ## Die Befehlstabelle
@@ -90,6 +90,15 @@ Ziele von `BSR`/`JSR`/`Bcc`/`DBcc`/`BRA`/`JMP` werden neue Wege und Labels; Date
 werden nur Labels. `render()` setzt Labels über einen `Symbolizer` in die Operanden ein; Labels, die in der
 Mitte einer Zeile liegen, werden im Quelltext-Modus als `EQU` mit ihrem Wert definiert. Ein Label ersetzt
 nie einen Operanden, dessen Wert es nicht exakt trifft (`abs.L` mit oberem Byte, vorzeichenerweitertes `.W`).
+
+## Emulator
+
+`Cpu` benutzt dieselbe Befehlstabelle wie Dekoder und Encoder: Beim ersten Gebrauch wird für alle 65536 Opcodes
+nachgeschlagen, welche Form passt, welche Größe sie hat und ob die Adressierungsarten erlaubt sind; danach genügt
+ein Tabellenzugriff pro Befehl. Die Ausführung (`Exec` in `src/cpu.cpp`) gliedert sich in Datenbewegung,
+Arithmetik/Logik/Schieben, Sprünge/Bitbefehle/Ausnahmen. Ausnahmen werden intern als C++-Ausnahme (`Cpu::Fault`) vom
+Ort des Fehlers (Adressfehler beim Zugriff, Privilegverletzung, `TRAP`, …) bis zu `Cpu::step()` geworfen und dort
+mit Stapelrahmen verarbeitet; das hält den Normalfall frei von Fehlerprüfungen. Siehe [emulator.md](emulator.md).
 
 ## Unterschiede zum Z80, die den Entwurf bestimmen
 

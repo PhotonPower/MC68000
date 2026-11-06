@@ -41,6 +41,7 @@ endfunction()
 # New components (assembler, decoder, cpu, ...) are added to this list as they are written.
 add_library(m68kcore STATIC
   src/assembler.cpp
+  src/cpu.cpp
   src/decoder.cpp
   src/disassembler.cpp
   src/encoder.cpp

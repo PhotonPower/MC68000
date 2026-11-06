@@ -10,8 +10,8 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
-> **Status: Version 0.2.** Assembler und Disassembler sind fertig und gegen GNU `objdump`/`as` kreuzgeprüft.
-> Emulator, Monitor und Agenten-Schnittstelle folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
+> **Status: Version 0.3 (Kern).** Assembler, Disassembler und der Emulator-Kern sind fertig und geprüft (GNU `objdump`/`as`,
+> Musashi). Snapshots, Agenten-Schnittstelle und Monitor folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
 > unter `docs/` beschreiben das **Zielbild** und sind als „geplant“ gekennzeichnet.
 
 ## Was es heute gibt
@@ -30,19 +30,25 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 - Eingabe: Raw-Binary, S-Record oder **Amiga-Hunk-Programm** (wird relokiert, Symbole werden Labels)
 
 **Bibliothek `m68kcore`:** `Memory` (16 MiB, Big-Endian), `decode()`, `encodeInstruction()`, `assemble()`,
-`Disassembler`, S-Record-Ein-/Ausgabe, Ausdrucksauswerter.
+`Disassembler`, `Cpu`, S-Record- und Hunk-Ein-/Ausgabe, Ausdrucksauswerter.
 
 **Getestet** ([docs/testing.md](docs/testing.md)): ein exhaustiver Roundtrip über alle 65536 Opcode-Wörter
 (rund 248 000 Befehle), 111 Zeilen mit Bytes aus GNU `as`, Zufallstests und – als unabhängige
 Kreuzprüfung – der Dekoder gegen GNU `objdump` (Gültigkeit, Länge, Mnemonic, Operanden aller 65536 Opcodes)
 und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 
+**Emulator-Kern** (`m68k::Cpu`, [docs/emulator.md](docs/emulator.md))
+- alle MC68000-Befehle und -Flags; Supervisor-/Benutzermodus; Ausnahmen mit Stapelrahmen (Adressfehler, unerlaubter Befehl,
+  Privilegverletzung, `CHK`, `TRAP`, Division durch 0, Trace, Line A/F); Interrupts, `STOP`
+- Einzelschritt, Breakpoints, Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks für Geräte
+- nur Register und Speicher zählen, **kein Timing**
+- **Differenztest gegen Musashi:** alle 65536 Opcodes mit zufälligen Zuständen, jeweils alle Register, SR und jedes
+  geschriebene Byte verglichen (rund 2,5 Millionen Fälle pro Lauf, 0 Abweichungen); dazu Unit-Tests
+
 ## Geplant
 
-- **Emulator** ([docs/emulator.md](docs/emulator.md)): befehlsgenauer MC68000-Kern, Ausnahmen, Supervisor-/Benutzermodus,
-  Breakpoints, Watchpoints, Checkpoints; nur Register und Speicher zählen, **kein Timing**
-- **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md)) und **Agenten-Schnittstelle**
-  (`m68ktool serve`, [docs/agent-protocol.md](docs/agent-protocol.md))
+- **Snapshots** und die **Agenten-Schnittstelle** `m68ktool serve` ([docs/agent-protocol.md](docs/agent-protocol.md)),
+  **Amiga-500-Speicherkarte**, **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
 - Amiga-Hunk-*Ausgabe* des Assemblers, **Reverse Engineering mit lokalem LLM**
   ([docs/reverse-engineering.md](docs/reverse-engineering.md))
 

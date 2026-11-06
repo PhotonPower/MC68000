@@ -55,3 +55,11 @@ jobs:
         run: python3 tools/crosscheck_objdump.py build/m68k_dump_forms 0 3
       - name: Assembler against GNU as
         run: python3 tools/crosscheck_gas.py build/m68ktool
+
+  emulator-diff:
+    name: Emulator against Musashi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Differential test (all 65536 opcodes, random states)
+        run: tools/run_diff_musashi.sh 10 1

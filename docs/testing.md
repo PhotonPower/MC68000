@@ -19,6 +19,7 @@ Die Tests brauchen kein externes Framework; `tests/test_util.hpp` stellt `CHECK`
 | `image_io`   | S-Record-Lesen/-Schreiben, Prüfsummen und Fehler mit Zeilennummer, Dateizugriff |
 | `hunk`       | Amiga-Hunk-Lader: Platzierung und Ausrichtung, Relokation, BSS, Symbole, Speicherflags in Größen, Namen für den Assembler, **jede Abkürzung der Datei** und weitere beschädigte Dateien werden abgelehnt |
 | `disassembler` | Ablaufanalyse (Code/Daten), zweiter Einstiegspunkt, überlappender Code, Symbole, Kommentare, Listing-Optionen, linearer Modus, Befehle über das Bereichsende, **Byte-genauer Roundtrip `assemble(--asm) == Speicher`** für 300 zufällige Speicher (linear) und 150 (Ablaufanalyse mit zufälligen Einstiegspunkten) |
+| `cpu`        | Emulator (rund 52 000 Prüfungen): Arithmetik und Flags mit von Hand gerechneten Werten, Schiebebefehle (Zähler über der Operandengröße, 0 und 64), BCD, Mul/Div, Bitbefehle, Adressierungsarten, `MOVEM`/`LINK`/`MOVEP`, Sprünge und Schleifen, alle Ausnahmen mit Rahmeninhalt (TRAP, Privileg, illegal, Line A, CHK, TRAPV, Division durch 0, Adressfehler, Doppelfehler), Stapelwechsel, Interrupts, `STOP`, Trace, Breakpoints/Watchpoints/`runUntil`/`stepOver`/`call`, Hooks, **Abgleich mit dem Dekoder für alle 65536 Opcodes** |
 | `cli_*`      | `m68ktool version`; Beispielprogramm assemblieren → disassemblieren (`--asm`) → erneut assemblieren → Dateien identisch |
 
 Der Roundtrip-Test beweist die Konsistenz von Dekoder und Assembler **untereinander**. Gegen
@@ -51,5 +52,14 @@ Sprüngen, PC-relativer Adressierung, Daten) werden in Motorola-Syntax mit `m68k
 `as` übersetzt; die Bytes müssen gleich sein. Aufgeführt sind nur Schreibweisen, die beide gleich
 übersetzen (siehe [assembler-syntax.md](assembler-syntax.md#wahl-der-befehlsform)).
 
-Die CI führt beide Prüfungen aus. Noch nicht eingesetzt sind ein Emulator-Test (kommt mit dem Emulator)
-und öffentliche Einzelbefehls-Testsätze.
+Die CI führt beide Prüfungen aus.
+
+## Emulator gegen Musashi
+
+```sh
+tools/run_diff_musashi.sh 4 1        # Versuche je Opcode, Seed (holt und baut Musashi in einem Temp-Verzeichnis)
+```
+
+Details und Ergebnis siehe [emulator.md](emulator.md#wie-der-kern-geprüft-ist): alle 65536 Opcodes, zufällige Zustände,
+Vergleich aller Register und jedes geschriebenen Bytes. Die CI führt einen Lauf mit 10 Versuchen je Opcode aus
+(rund 600 000 Fälle). Noch nicht eingesetzt sind öffentliche Einzelbefehls-Testsätze.
