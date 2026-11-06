@@ -257,7 +257,7 @@ private:
     }
     Word fetch16() {
         if (r_.pc & 1U) addressError(r_.pc, true, true);
-        const Word w = mem_.read16(r_.pc & kAddressMask);
+        const Word w = static_cast<Word>(c_.rawRead(r_.pc & kAddressMask, Size::W));
         r_.pc = (r_.pc + 2) & kAddressMask;
         return w;
     }
@@ -1119,7 +1119,7 @@ void Exec::processException(const Cpu::Fault& f) {
         push16(oldSr);
     }
     ++c_.depth_;
-    r_.pc = mem_.read32(f.vector * 4U) & kAddressMask;
+    r_.pc = c_.rawRead(f.vector * 4U, Size::L) & kAddressMask;
 }
 
 void Exec::processInterrupt(unsigned level, unsigned vector) {
@@ -1128,7 +1128,7 @@ void Exec::processInterrupt(unsigned level, unsigned vector) {
     push32(r_.pc);
     push16(oldSr);
     ++c_.depth_;
-    r_.pc = mem_.read32(vector * 4U) & kAddressMask;
+    r_.pc = c_.rawRead(vector * 4U, Size::L) & kAddressMask;
 }
 
 // ---- Cpu ------------------------------------------------------------------------------------------------
@@ -1144,11 +1144,38 @@ void Cpu::setSr(Word value) {
 void Cpu::reset() {
     r_.sr = 0x2700;
     r_.inactiveSp = 0;
-    r_.a[7] = mem_.read32(0);
-    r_.pc = mem_.read32(4) & kAddressMask;
+    r_.a[7] = rawRead(0, Size::L);
+    r_.pc = rawRead(4, Size::L) & kAddressMask;
     halted_ = stopped_ = false;
     irqLevel_ = 0;
     depth_ = 0;
+}
+
+CpuState Cpu::state() const {
+    CpuState s;
+    s.regs = r_;
+    s.halted = halted_;
+    s.stopped = stopped_;
+    s.instructions = instructions_;
+    s.exceptions = exceptions_;
+    s.lastException = lastException_;
+    s.depth = depth_;
+    s.irqLevel = irqLevel_;
+    s.irqVector = irqVector_;
+    return s;
+}
+
+void Cpu::setState(const CpuState& s) {
+    r_ = s.regs;
+    r_.sr &= kSrValidBits;
+    halted_ = s.halted;
+    stopped_ = s.stopped;
+    instructions_ = s.instructions;
+    exceptions_ = s.exceptions;
+    lastException_ = s.lastException;
+    depth_ = s.depth;
+    irqLevel_ = s.irqLevel;
+    irqVector_ = s.irqVector;
 }
 
 void Cpu::interrupt(unsigned level, int vector) {
@@ -1158,6 +1185,13 @@ void Cpu::interrupt(unsigned level, int vector) {
 
 void Cpu::addWatchpoint(Address start, Address length, bool onRead, bool onWrite) {
     watches_.push_back({start & kAddressMask, (start & kAddressMask) + length, onRead, onWrite});
+}
+
+Long Cpu::rawRead(Address a, Size s) const {
+    a &= kAddressMask;
+    Long v;
+    if (readOverride && readOverride(a, s, v)) return v;
+    return s == Size::B ? mem_.read8(a) : s == Size::W ? mem_.read16(a) : mem_.read32(a);
 }
 
 Long Cpu::peek(Address a, Size s) const {
@@ -1180,6 +1214,8 @@ StepResult Cpu::step() {
             irqLevel_ = 0;
             stopped_ = false;
             ex.processInterrupt(level, vec);
+            ++exceptions_;
+            lastException_ = vec;
             ++instructions_;
             return res;
         }
@@ -1194,12 +1230,14 @@ StepResult Cpu::step() {
     }
     const bool trace = (r_.sr & kSrTrace) != 0;
     try {
-        if (traceHook) traceHook(r_, r_.pc, mem_.read16(r_.pc & kAddressMask));
+        if (traceHook) traceHook(r_, r_.pc, static_cast<Word>(rawRead(r_.pc, Size::W)));
         ex.run();
     } catch (const Fault& f) {
         res.exception = f.vector;
         try {
             ex.processException(f);
+            ++exceptions_;
+            lastException_ = f.vector;
         } catch (const Fault&) {
             halted_ = true;  // fault while processing an exception: the processor halts
             res.reason = StopReason::Halted;
@@ -1214,6 +1252,8 @@ StepResult Cpu::step() {
             t.vector = kVecTrace;
             t.pc = r_.pc;
             ex.processException(t);
+            ++exceptions_;
+            lastException_ = kVecTrace;
             res.exception = kVecTrace;
         } catch (const Fault&) {
             halted_ = true;

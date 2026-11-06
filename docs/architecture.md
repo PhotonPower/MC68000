@@ -49,7 +49,10 @@ derselben Bibliothek.
 | `image_io.hpp`                      | Dateien lesen/schreiben, S-Record                            | fertig  |
 | `hunk.hpp`                          | Amiga-Hunk-Lader (Relokation, Symbole)                       | fertig  |
 | `cpu.hpp`                           | `Registers`, `Cpu` (Ausführung, Ausnahmen, Interrupts, Breakpoints, Hooks) | fertig  |
-| `snapshot.hpp`, `json.hpp`, `session.hpp` | Zustand speichern/laden, Agenten-Protokoll (Meilenstein 0.3, zweiter Teil) | geplant |
+| `snapshot.hpp`                      | `Snapshot` (CPU + Speicher), Datei, Speicher-Diff            | fertig  |
+| `json.hpp`                          | kleiner JSON-Baustein (Parser/Ausgabe, Einfügereihenfolge)   | fertig  |
+| `amiga.hpp`                         | `Amiga500`: Speicherkarte, ROM-Overlay, Geräte-Schreibprotokoll | fertig  |
+| `session.hpp`                       | `Session`: eine Maschine, Marken, Checkpoints; JSON-Befehle  | fertig  |
 | `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
 
 ## Die Befehlstabelle

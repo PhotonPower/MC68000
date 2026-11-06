@@ -7,7 +7,7 @@
 
 **Version 0.2:** Dekoder, Assembler und Disassembler (Meilenstein 0.2) sind fertig und gegen GNU binutils
 kreuzgeprüft ([testing.md](testing.md)). `m68ktool asm` und `m68ktool dis` arbeiten mit Raw-Binary und
-Motorola S-Records. Der Emulator-Kern steht (Meilenstein 0.3, erster Teil); Snapshots, Agenten-Schnittstelle und Monitor fehlen noch.
+Motorola S-Records. Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`) und Amiga-500-Speicherkarte stehen (Meilenstein 0.3); Monitor und Reverse-Engineering-Werkzeuge fehlen noch.
 
 ## Meilenstein 0.2 – Dekoder, Assembler, Disassembler (erledigt)
 
@@ -22,17 +22,20 @@ Amiga-Hunk (siehe [amiga500.md](amiga500.md)):
 - noch offen: **Hunk-Ausgabe** des Assemblers (`SECTION`, `XDEF`, Relokationen)
 - optional: Optimierungen des Assemblers (`ADD #n` → `ADDQ`, `MOVE #n` → `MOVEQ`, absolut → PC-relativ), per Schalter
 
-## Meilenstein 0.3 – Emulator (Kern fertig)
+## Meilenstein 0.3 – Emulator (erledigt)
 
-Erledigt ([emulator.md](emulator.md)): `Cpu` mit allen Befehlen, Flags, Supervisor/Benutzer, Ausnahmen und Stapelrahmen,
-Interrupts, `STOP`, Trace; Einzelschritt, Breakpoints, Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`,
-Speicher-Hooks; Differenztest gegen Musashi (65536 Opcodes, 0 Abweichungen) und Unit-Tests.
+Erledigt ([emulator.md](emulator.md), [agent-protocol.md](agent-protocol.md), [amiga500.md](amiga500.md)):
+- `Cpu` mit allen Befehlen, Flags, Supervisor/Benutzer, Ausnahmen und Stapelrahmen, Interrupts, `STOP`, Trace; Einzelschritt,
+  Breakpoints, Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks; Differenztest gegen Musashi
+  (65536 Opcodes, 0 Abweichungen) und Unit-Tests
+- Snapshots (Speicher und Datei), Speicher-Diff
+- `Session` und `m68ktool serve` (JSON-Zeilenprotokoll nach dem Vorbild des Z80-Protokolls)
+- Amiga-500-Speicherkarte (Chip-/Fast-/Slow-RAM, Custom-/CIA-Register als Speicher mit Schreibprotokoll, ROM-Overlay);
+  Hunk-Programme laden und starten
 
-Offen:
-- **Snapshots:** Checkpoints im Speicher, Snapshot-Datei, CPU-Zustand als JSON; bit-identische Wiederaufnahme
-- **`Session` und `m68ktool serve`:** JSON-Zeilenprotokoll ([agent-protocol.md](agent-protocol.md))
-- **Amiga-500-Speicherkarte** (ROM-Overlay, Chip-RAM, Custom-Register als einfacher Block, CIA nach Bedarf) als Modul über
-  `readOverride`/`writeOverride`; Hunk-Programme laden und starten
+Offen (Ideen):
+- Stubs für häufige Amiga-Bibliotheksfunktionen (`exec`, `dos`; `JSR -offset(A6)`), die ihr Ergebnis im Speicher nachbilden,
+  samt ExecBase und `A6`
 - Befehlsfolgen im Differenztest (Zustand über mehrere Befehle), Adressfehler gegen Musashi mit eingeschalteter Emulation
 
 ## Meilenstein 0.4 – Monitor

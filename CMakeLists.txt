@@ -40,6 +40,7 @@ endfunction()
 # ---- core library ---------------------------------------------------------------------
 # New components (assembler, decoder, cpu, ...) are added to this list as they are written.
 add_library(m68kcore STATIC
+  src/amiga.cpp
   src/assembler.cpp
   src/cpu.cpp
   src/decoder.cpp
@@ -49,7 +50,10 @@ add_library(m68kcore STATIC
   src/forms.cpp
   src/hunk.cpp
   src/format.cpp
-  src/image_io.cpp)
+  src/image_io.cpp
+  src/session.cpp
+  src/snapshot.cpp
+  src/json.cpp)
 target_include_directories(m68kcore PUBLIC include)
 target_compile_features(m68kcore PUBLIC cxx_std_20)
 m68k_set_warnings(m68kcore)

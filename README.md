@@ -10,8 +10,8 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
-> **Status: Version 0.3 (Kern).** Assembler, Disassembler und der Emulator-Kern sind fertig und geprüft (GNU `objdump`/`as`,
-> Musashi). Snapshots, Agenten-Schnittstelle und Monitor folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
+> **Status: Version 0.3.** Assembler, Disassembler, Emulator, Agenten-Schnittstelle und Amiga-500-Speicherkarte sind fertig und
+> geprüft (GNU `objdump`/`as`, Musashi). Monitor und Reverse-Engineering-Werkzeuge folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
 > unter `docs/` beschreiben das **Zielbild** und sind als „geplant“ gekennzeichnet.
 
 ## Was es heute gibt
@@ -37,7 +37,7 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 Kreuzprüfung – der Dekoder gegen GNU `objdump` (Gültigkeit, Länge, Mnemonic, Operanden aller 65536 Opcodes)
 und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 
-**Emulator-Kern** (`m68k::Cpu`, [docs/emulator.md](docs/emulator.md))
+**Emulator** (`m68k::Cpu`, [docs/emulator.md](docs/emulator.md))
 - alle MC68000-Befehle und -Flags; Supervisor-/Benutzermodus; Ausnahmen mit Stapelrahmen (Adressfehler, unerlaubter Befehl,
   Privilegverletzung, `CHK`, `TRAP`, Division durch 0, Trace, Line A/F); Interrupts, `STOP`
 - Einzelschritt, Breakpoints, Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks für Geräte
@@ -45,12 +45,20 @@ und der Assembler gegen GNU `as` (125 Fälle); AddressSanitizer/UBSan in der CI.
 - **Differenztest gegen Musashi:** alle 65536 Opcodes mit zufälligen Zuständen, jeweils alle Register, SR und jedes
   geschriebene Byte verglichen (rund 2,5 Millionen Fälle pro Lauf, 0 Abweichungen); dazu Unit-Tests
 
+**Agenten-Schnittstelle** (`m68ktool serve`, [docs/agent-protocol.md](docs/agent-protocol.md))
+- JSON-Zeilenprotokoll nach dem Vorbild von `z80tool serve`: assemblieren, disassemblieren, Speicher lesen/schreiben, Register,
+  Einzelschritt/Lauf/`call` mit Breakpoints und Watchpoints, Checkpoints mit Rollback und Speicher-Diff, Snapshots,
+  Interrupts; Dateizugriff nur mit `--allow-files`
+
+**Amiga 500** ([docs/amiga500.md](docs/amiga500.md)): Speicherkarte (Chip-/Fast-/Slow-RAM, Custom-Chip- und CIA-Register als
+Speicher mit Schreibprotokoll, ROM mit Overlay); Amiga-Hunk-Programme laden und starten. Keine Geräte (kein Ton/Video/Disk).
+
 ## Geplant
 
-- **Snapshots** und die **Agenten-Schnittstelle** `m68ktool serve` ([docs/agent-protocol.md](docs/agent-protocol.md)),
-  **Amiga-500-Speicherkarte**, **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
-- Amiga-Hunk-*Ausgabe* des Assemblers, **Reverse Engineering mit lokalem LLM**
-  ([docs/reverse-engineering.md](docs/reverse-engineering.md))
+- **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
+- **Reverse Engineering mit lokalem LLM** ([docs/reverse-engineering.md](docs/reverse-engineering.md)): Analyse- und
+  Annotationsbefehle, Orchestrator; Stubs für Amiga-Bibliotheksaufrufe
+- Amiga-Hunk-*Ausgabe* des Assemblers
 
 ## Schnellstart
 
@@ -62,6 +70,7 @@ ctest --test-dir build
 ./build/m68ktool asm examples/hello.s -l - -o hello.bin      # assemblieren, Listing auf den Bildschirm
 ./build/m68ktool dis hello.bin --org 0x1000                  # disassemblieren (Ablaufanalyse)
 ./build/m68ktool dis hello.bin --org 0x1000 --asm            # als wieder assemblierbarer Quelltext
+./build/m68ktool serve < examples/agent_session.jsonl        # Emulator per JSON-Protokoll
 ```
 
 Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 2022).

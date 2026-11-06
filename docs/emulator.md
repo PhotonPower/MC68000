@@ -4,9 +4,8 @@
 Flags und Speicherinhalt; Zeit wird nicht modelliert. Der Zustand (Register, Speicher) ist die Schnittstelle –
 siehe die Entscheidungen in der [Roadmap](roadmap.md).
 
-> **Stand:** Der Prozessorkern ist fertig und geprüft. Noch **nicht** vorhanden sind Snapshots, die JSON-Sitzung
-> (`m68ktool serve`, [agent-protocol.md](agent-protocol.md)) und die Amiga-Speicherkarte – sie folgen
-> (Meilenstein 0.3, zweiter Teil).
+> **Stand:** Prozessorkern, Snapshots, die JSON-Sitzung (`m68ktool serve`, [agent-protocol.md](agent-protocol.md)) und die
+> Amiga-500-Speicherkarte ([amiga500.md](amiga500.md)) sind fertig und geprüft.
 
 ## Umfang
 
@@ -35,9 +34,10 @@ siehe die Entscheidungen in der [Roadmap](roadmap.md).
 | `call(einstieg, rücksprung, n)` | legt die Rücksprungadresse auf den Stapel und läuft bis dorthin |
 | `addBreakpoint`, `addWatchpoint(start, länge, lesen, schreiben)` | Haltepunkte; ein Watchpoint hält **nach** dem Befehl, der zugreift |
 | `traceHook`, `accessHook` | Rückrufe vor jedem Befehl bzw. bei jedem Datenzugriff |
-| `readOverride`, `writeOverride` | Datenzugriffe abfangen (speicherabgebildete Geräte, ROM-Schutz) |
+| `readOverride`, `writeOverride` | Zugriffe abfangen (speicherabgebildete Geräte, ROM, Overlay); `readOverride` gilt auch für Befehlsholen und Vektorlesen |
 | `resetHook` | der `RESET`-Befehl |
 | `registers()`, `setSr()`, `peek()` | Zugriff auf den Zustand ohne Seiteneffekte |
+| `state()`, `setState()` | der ganze Prozessorzustand (Register, Zähler, anstehender Interrupt) – Grundlage der Snapshots |
 
 Die Ergebnisse von `run…` nennen den Grund (`StopReason`): Limit, Breakpoint, Watchpoint, Reached, Returned, Stopped, Halted.
 
@@ -77,13 +77,20 @@ dem Verhalten von Musashi (so wie die meisten Emulatoren):
 - Der Busfehler (Vektor 2) wird vom Kern nie ausgelöst. Im Rahmen eines Adressfehlers ist der gestapelte PC der PC
   nach den bis dahin geholten Wörtern (die echte Hardware stapelt einen Wert bis 10 Byte hinter dem Befehlsanfang).
 - `MOVEM` liest nicht das zusätzliche Wort hinter der Registerliste, `CLR` liest vor dem Schreiben nicht
-  (sichtbar nur über Lese-Watchpoints bzw. -Hooks); Befehlsholen und Vektorlesen laufen nicht über `readOverride`/
-  `accessHook` (Programmcode in Geräteregistern wird nicht unterstützt).
+  (sichtbar nur über Lese-Watchpoints bzw. -Hooks); Befehlsholen und Vektorlesen laufen über `readOverride`
+  (Code im ROM, Vektortabelle über das Overlay), aber nicht über `accessHook` und Watchpoints.
 - Interrupts kommen nur über `interrupt()`, nicht von Geräten; der Differenztest deckt Adressfehler, Interrupts,
   Trace, `STOP` und Befehlsfolgen nicht ab (Musashi ist ohne Adressfehler gebaut) – dafür gibt es die Unit-Tests.
 
 ## Plattformen
 
 Der Kern kennt keine bestimmte Maschine; Geräte hängen über `readOverride`/`writeOverride` an. Zielplattform ist der
-**Amiga 500** ([amiga500.md](amiga500.md)): Speicherkarte mit ROM-Overlay, Chip-RAM, Custom-Chip-Registern und CIAs
-kommen als eigenes Modul (noch nicht umgesetzt).
+**Amiga 500**: `m68k::Amiga500` ([amiga500.md](amiga500.md)) bildet die Speicherkarte nach (Chip-RAM, ROM-Overlay,
+Custom-Chip- und CIA-Register als Speicher mit Schreibprotokoll).
+
+## Snapshots
+
+`capture(cpu)` / `restore(cpu, snapshot)` sichern und setzen Prozessorzustand und Speicher; `serialize()` /
+`deserializeSnapshot()` schreiben/lesen die Datei (`M68KSNP1`, Register, Zähler, die belegten 64-KiB-Seiten; beschädigte
+Dateien werden abgelehnt). Das Zurückspielen ist bit-identisch: Ein erneuter Lauf liefert dieselben Register und
+denselben Speicher (getestet). Haltepunkte und Hooks gehören nicht zum Zustand.

@@ -7,6 +7,10 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Meilenstein 0.3, zweiter Teil:** `m68ktool serve` – JSON-Zeilenprotokoll für LLM-Agenten (`m68k::Session`, nach dem Vorbild
+  von `z80tool serve`), Snapshots (`m68k/snapshot.hpp`: Speicher und Datei, Speicher-Diff), `m68k::Amiga500` (Speicherkarte,
+  Schreibprotokoll der Custom-/CIA-Register, ROM-Overlay), JSON-Baustein; Hunk-Programme per `load_file` laden und starten.
+  `readOverride` gilt jetzt auch für Befehlsholen und Vektorlesen (Code im ROM). Tests `session` (rund 400 Prüfungen).
 - **Emulator-Kern** (`m68k::Cpu`, Meilenstein 0.3 erster Teil): alle Befehle, Ausnahmen mit Stapelrahmen, Interrupts, `STOP`,
   Trace, Breakpoints/Watchpoints, `runUntil`/`runUntilReturn`/`stepOver`/`call`, Speicher-Hooks. Funktional, ohne Timing.
 - Differenztest gegen **Musashi** (`tools/diff_musashi.cpp`, `tools/run_diff_musashi.sh`): alle 65536 Opcodes, zufällige

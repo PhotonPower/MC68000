@@ -1,0 +1,14 @@
+{"cmd":"asm","source":"        ORG $1000\nstart:  MOVEQ #0,D0\n        MOVE.W #9,D1\nloop:   ADD.W D1,D0\n        MOVE.W D0,result\n        DBRA D1,loop\n        STOP #$2700\nresult: DC.W 0","entry":"start"}
+{"cmd":"checkpoint","name":"fresh"}
+{"cmd":"run"}
+{"cmd":"regs"}
+{"cmd":"read","addr":"result","len":2}
+{"cmd":"diff","name":"fresh"}
+{"cmd":"rollback","name":"fresh"}
+{"cmd":"break","addr":"loop"}
+{"cmd":"run"}
+{"cmd":"step","n":3,"trace":true}
+{"cmd":"dis","addr":"start","count":6}
+{"cmd":"clear_breaks"}
+{"cmd":"call","addr":"start","regs":{"D5":7}}
+{"cmd":"bogus"}

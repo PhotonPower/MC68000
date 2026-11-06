@@ -2,9 +2,10 @@
 //
 //   m68ktool asm <source.s> [options]     assembler
 //   m68ktool dis <image>    [options]     disassembler
+//   m68ktool serve [--allow-files]        emulator server (JSON lines)
 //   m68ktool help | version
 //
-// The monitor and the emulator server are planned (docs/roadmap.md).
+// The monitor is planned (docs/roadmap.md).
 
 #include <algorithm>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include "m68k/format.hpp"
 #include "m68k/hunk.hpp"
 #include "m68k/image_io.hpp"
+#include "m68k/session.hpp"
 #include "m68k/version.hpp"
 
 namespace {
@@ -37,6 +39,7 @@ void printUsage(std::ostream& out) {
         << "Usage:\n"
         << "  m68ktool asm <source.s> [options]\n"
         << "  m68ktool dis <image>    [options]\n"
+        << "  m68ktool serve [--allow-files]   emulator server: JSON requests on stdin, replies on stdout\n"
         << "  m68ktool help | version\n"
         << "\n"
         << "asm options:\n"
@@ -59,6 +62,9 @@ void printUsage(std::ostream& out) {
         << "  --no-bytes       listing without the instruction words\n"
         << "  --style <s>      number style: dollar (default), c, h\n"
         << "  -o <file>        write to a file instead of standard output\n"
+        << "\n"
+        << "serve options:\n"
+        << "  --allow-files    let the client use load_file, load_rom, save_state, load_state (off by default)\n"
         << "\n"
         << "Numbers: 123, $1F, 0x1F, %1010. Exit codes: 0 ok, 1 errors in the source, 2 usage/I-O error.\n";
 }
@@ -232,6 +238,23 @@ int cmdDis(Args args) {
     return kExitOk;
 }
 
+int cmdServe(Args args) {
+    m68k::SessionOptions opt;
+    while (!args.done()) {
+        const std::string a = args.next();
+        if (a == "--allow-files") opt.allowFiles = true;
+        else throw UsageError("unknown option " + a);
+    }
+    m68k::Session session(opt);
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.find_first_not_of(" \t") == std::string::npos) continue;
+        std::cout << session.handleLine(line) << "\n" << std::flush;
+    }
+    return kExitOk;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -251,7 +274,8 @@ int main(int argc, char** argv) {
         }
         if (command == "asm") return cmdAsm(Args(argc, argv));
         if (command == "dis") return cmdDis(Args(argc, argv));
-        if (command == "monitor" || command == "serve") {
+        if (command == "serve") return cmdServe(Args(argc, argv));
+        if (command == "monitor") {
             std::cerr << "m68ktool: '" << command << "' is not implemented yet (see docs/roadmap.md)\n";
             return kExitUsage;
         }

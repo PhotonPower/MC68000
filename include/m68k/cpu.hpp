@@ -60,6 +60,18 @@ struct RunResult {
     Address watchAddress = 0;        ///< for Watchpoint: the address that was touched
 };
 
+/// Everything that defines the processor's state besides the memory (breakpoints and hooks are not part of it).
+struct CpuState {
+    Registers regs;
+    bool halted = false, stopped = false;
+    std::uint64_t instructions = 0;
+    std::uint64_t exceptions = 0;   ///< exceptions and interrupts taken so far
+    unsigned lastException = 0;     ///< vector of the most recent one
+    int depth = 0;                  ///< call depth (see Cpu::runUntilReturn)
+    unsigned irqLevel = 0;          ///< pending interrupt request
+    int irqVector = -1;
+};
+
 /// MC68000 processor core.
 ///
 /// Functional emulation: every instruction yields the correct registers, flags and memory contents,
@@ -77,6 +89,9 @@ public:
     Registers& registers() { return r_; }
     [[nodiscard]] const Registers& registers() const { return r_; }
     Memory& memory() { return mem_; }
+    [[nodiscard]] const Memory& memory() const { return mem_; }
+    /// Address of the instruction being (or last) executed; valid inside hooks.
+    [[nodiscard]] Address instructionAddress() const { return startPc_; }
 
     /// Writes the status register; switches the active stack pointer if the S bit changes.
     void setSr(Word value);
@@ -114,7 +129,9 @@ public:
     std::function<void(const Registers&, Address, Word)> traceHook;
     /// Called for every data access: address, size, value, true for writes.
     std::function<void(Address, Size, Long, bool)> accessHook;
-    /// Replaces a read (return true and set `value` to handle it, e.g. device registers).
+    /// Replaces a read (return true and set `value` to handle it, e.g. device registers or a ROM overlay).
+    /// Used for data reads, instruction fetches and exception vector reads; only data accesses are
+    /// reported to accessHook and watchpoints.
     std::function<bool(Address, Size, Long& value)> readOverride;
     /// Intercepts a write (return true to swallow it).
     std::function<bool(Address, Size, Long)> writeOverride;
@@ -125,6 +142,12 @@ public:
     /// Requests an interrupt of level 1..7 (0 clears it). It is taken before the next instruction if
     /// its level is above the mask in SR (level 7 is non-maskable). `vector` < 0 selects the autovector.
     void interrupt(unsigned level, int vector = -1);
+
+    [[nodiscard]] CpuState state() const;
+    void setState(const CpuState& s);
+    /// Exceptions and interrupts taken since the last reset of the counters (part of the state).
+    [[nodiscard]] std::uint64_t exceptionCount() const { return exceptions_; }
+    [[nodiscard]] unsigned lastException() const { return lastException_; }
 
     [[nodiscard]] bool halted() const { return halted_; }
     [[nodiscard]] bool stopped() const { return stopped_; }
@@ -150,6 +173,8 @@ private:
     Address watchAddress_ = 0;
     bool halted_ = false, stopped_ = false;
     std::uint64_t instructions_ = 0;
+    std::uint64_t exceptions_ = 0;
+    unsigned lastException_ = 0;
     int depth_ = 0;
     unsigned irqLevel_ = 0;
     int irqVector_ = -1;
@@ -157,6 +182,7 @@ private:
     Word opcode_ = 0;
 
     RunResult runLoop(std::uint64_t maxInstructions, std::optional<Address> until, bool untilReturn);
+    [[nodiscard]] Long rawRead(Address a, Size s) const;  // instruction fetch / vector read: readOverride, else memory
 };
 
 }  // namespace m68k
