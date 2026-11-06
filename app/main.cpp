@@ -2,10 +2,19 @@
 //
 //   m68ktool asm <source.s> [options]     assembler
 //   m68ktool dis <image>    [options]     disassembler
+//   m68ktool monitor [image] [options]    machine-code monitor
 //   m68ktool serve [--allow-files]        emulator server (JSON lines)
 //   m68ktool help | version
 //
-// The monitor is planned (docs/roadmap.md).
+// The monitor is an interactive front end to the same library (docs/monitor.md).
+
+#ifdef _WIN32
+#include <io.h>
+#define M68K_ISATTY(fd) _isatty(fd)
+#else
+#include <unistd.h>
+#define M68K_ISATTY(fd) isatty(fd)
+#endif
 
 #include <algorithm>
 #include <iostream>
@@ -20,6 +29,7 @@
 #include "m68k/format.hpp"
 #include "m68k/hunk.hpp"
 #include "m68k/image_io.hpp"
+#include "m68k/monitor.hpp"
 #include "m68k/session.hpp"
 #include "m68k/version.hpp"
 
@@ -39,6 +49,7 @@ void printUsage(std::ostream& out) {
         << "Usage:\n"
         << "  m68ktool asm <source.s> [options]\n"
         << "  m68ktool dis <image>    [options]\n"
+        << "  m68ktool monitor [image] [--org <hex>] [--amiga] [--no-files]   interactive machine-code monitor\n"
         << "  m68ktool serve [--allow-files]   emulator server: JSON requests on stdin, replies on stdout\n"
         << "  m68ktool help | version\n"
         << "\n"
@@ -238,6 +249,37 @@ int cmdDis(Args args) {
     return kExitOk;
 }
 
+int cmdMonitor(Args args) {
+    m68k::MonitorOptions opt;
+    std::string image, org;
+    bool amiga = false;
+    while (!args.done()) {
+        const std::string a = args.next();
+        if (a == "--no-files") opt.allowFiles = false;
+        else if (a == "--amiga") amiga = true;
+        else if (a == "--org") org = args.value(a);
+        else if (!a.empty() && a[0] == '-') throw UsageError("unknown option " + a);
+        else if (image.empty()) image = a;
+        else throw UsageError("more than one image file");
+    }
+    m68k::Monitor mon(opt);
+    const bool interactive = M68K_ISATTY(0) != 0;
+    if (interactive) std::cout << m68k::Monitor::banner();
+    if (amiga) std::cout << mon.execute("machine amiga500");
+    if (!image.empty()) {
+        if (!opt.allowFiles) throw UsageError("an image cannot be loaded with --no-files");
+        std::cout << mon.execute("l " + image + (org.empty() ? "" : " " + org));
+    }
+    std::string line;
+    while (!mon.finished()) {
+        if (interactive) std::cout << mon.prompt() << " " << std::flush;
+        if (!std::getline(std::cin, line)) break;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::cout << mon.execute(line) << std::flush;
+    }
+    return kExitOk;
+}
+
 int cmdServe(Args args) {
     m68k::SessionOptions opt;
     while (!args.done()) {
@@ -275,10 +317,7 @@ int main(int argc, char** argv) {
         if (command == "asm") return cmdAsm(Args(argc, argv));
         if (command == "dis") return cmdDis(Args(argc, argv));
         if (command == "serve") return cmdServe(Args(argc, argv));
-        if (command == "monitor") {
-            std::cerr << "m68ktool: '" << command << "' is not implemented yet (see docs/roadmap.md)\n";
-            return kExitUsage;
-        }
+        if (command == "monitor") return cmdMonitor(Args(argc, argv));
         std::cerr << "m68ktool: unknown command '" << command << "'\n\n";
         printUsage(std::cerr);
         return kExitUsage;

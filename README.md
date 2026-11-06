@@ -10,9 +10,9 @@ derselben Architektur: eine Bibliothek ohne Ein-/Ausgabe (`m68kcore`), ein Komma
 
 > **Zielplattform:** Commodore **Amiga 500** (MC68000, Motorola-Syntax) – siehe [docs/amiga500.md](docs/amiga500.md).
 
-> **Status: Version 0.3.** Assembler, Disassembler, Emulator, Agenten-Schnittstelle und Amiga-500-Speicherkarte sind fertig und
-> geprüft (GNU `objdump`/`as`, Musashi). Monitor und Reverse-Engineering-Werkzeuge folgen nach der [Roadmap](docs/roadmap.md); ihre Dokumente
-> unter `docs/` beschreiben das **Zielbild** und sind als „geplant“ gekennzeichnet.
+> **Status: Version 0.4.** Assembler, Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte und die
+> Reverse-Engineering-Werkzeuge sind fertig und geprüft (GNU `objdump`/`as`, Musashi). Es fehlen der Orchestrator für ein lokales LLM
+> und Stubs für Amiga-Bibliotheksaufrufe ([Roadmap](docs/roadmap.md)).
 
 ## Was es heute gibt
 
@@ -58,9 +58,13 @@ Aufrufgraph (`analyze`, `routines`), Annotationen (Namen, Dokumentation, Datenbe
 **verifiziertes Listing** – aus den echten Bytes erzeugt, neu assembliert und Byte für Byte verglichen, sodass kein Name und
 kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen getestet).
 
+**Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
+- klassische Eingabeschleife wie beim Z80-Monitor, Zahlen hexadezimal: disassemblieren, Speicher ansehen/ändern/füllen/vergleichen/
+  kopieren/suchen, **Zeilen assemblieren**, Register, Einzelschritt/Step over/bis Rückkehr/laufen, Haltepunkte und Watchpoints,
+  Symbole, Dateien (Quelltext, Raw, S-Record, Hunk), Checkpoints, Snapshots, Interrupts, Amiga-Speicherkarte
+
 ## Geplant
 
-- **Monitor** (`m68ktool monitor`, [docs/monitor.md](docs/monitor.md))
 - **Orchestrator für ein lokales LLM** (Ollama, nach dem Vorbild von `z80_annotate.py`); Stubs für Amiga-Bibliotheksaufrufe
 - Amiga-Hunk-*Ausgabe* des Assemblers
 
@@ -74,6 +78,7 @@ ctest --test-dir build
 ./build/m68ktool asm examples/hello.s -l - -o hello.bin      # assemblieren, Listing auf den Bildschirm
 ./build/m68ktool dis hello.bin --org 0x1000                  # disassemblieren (Ablaufanalyse)
 ./build/m68ktool dis hello.bin --org 0x1000 --asm            # als wieder assemblierbarer Quelltext
+./build/m68ktool monitor < examples/monitor_session.txt      # interaktiver Monitor (hier als Skript)
 ./build/m68ktool serve < examples/agent_session.jsonl        # Emulator per JSON-Protokoll
 ```
 

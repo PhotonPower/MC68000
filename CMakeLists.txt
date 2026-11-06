@@ -54,6 +54,7 @@ add_library(m68kcore STATIC
   src/format.cpp
   src/image_io.cpp
   src/listing.cpp
+  src/monitor.cpp
   src/session.cpp
   src/session_analysis.cpp
   src/snapshot.cpp

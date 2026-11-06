@@ -5,9 +5,10 @@
 
 ## Wo wir stehen
 
-**Version 0.2:** Dekoder, Assembler und Disassembler (Meilenstein 0.2) sind fertig und gegen GNU binutils
-kreuzgeprüft ([testing.md](testing.md)). `m68ktool asm` und `m68ktool dis` arbeiten mit Raw-Binary und
-Motorola S-Records. Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`) und Amiga-500-Speicherkarte stehen (Meilenstein 0.3); Monitor und Reverse-Engineering-Werkzeuge fehlen noch.
+**Version 0.4:** Dekoder, Assembler, Disassembler, Emulator, Snapshots, Agenten-Schnittstelle (`m68ktool serve`), Amiga-500-Speicherkarte,
+Monitor (`m68ktool monitor`) und die Reverse-Engineering-Werkzeuge (Analyse, Annotationen, verifiziertes Listing) sind fertig und gegen
+GNU binutils bzw. Musashi kreuzgeprüft ([testing.md](testing.md)). Offen sind vor allem der **Orchestrator** für ein lokales LLM und
+Stubs für Amiga-Bibliotheksaufrufe.
 
 ## Meilenstein 0.2 – Dekoder, Assembler, Disassembler (erledigt)
 
@@ -38,9 +39,16 @@ Offen (Ideen):
   samt ExecBase und `A6`
 - Befehlsfolgen im Differenztest (Zustand über mehrere Befehle), Adressfehler gegen Musashi mit eingeschalteter Emulation
 
-## Meilenstein 0.4 – Monitor
+## Meilenstein 0.4 – Monitor (erledigt)
 
-- `m68k::Monitor` und `m68ktool monitor` mit den Befehlen aus [monitor.md](monitor.md)
+`m68ktool monitor` ([monitor.md](monitor.md)) bietet die klassischen Befehle des Z80-Monitors: `d m e f c t h a r n o u g ru b bc w limit sym
+symload symsave asm l sv ck rb savestate loadstate int io reset` und `machine`, `rom` für den Amiga. Hex als Standard, Assemble-Modus,
+Raw/S-Record/Hunk laden.
+
+Offen (Ideen):
+- Zeileneditor mit Verlauf im Programm (statt `rlwrap`), Tab-Vervollständigung für Symbole
+- Vorwärtsreferenzen beim zeilenweisen Assemblieren (Fixups, die bei der Definition nachgetragen werden)
+- Textoberfläche (TUI) mit Registern, Disassembly und Speicher gleichzeitig
 
 ## Meilenstein 0.5 – Reverse Engineering (Werkzeuge fertig, Orchestrator offen)
 

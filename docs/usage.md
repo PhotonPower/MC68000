@@ -3,11 +3,13 @@
 ```
 m68ktool asm <source.s> [Optionen]
 m68ktool dis <image>    [Optionen]
+m68ktool monitor [image] [Optionen]
+m68ktool serve [--allow-files]
 m68ktool help | version
 ```
 
 Rückgabewerte: `0` Erfolg, `1` Fehler im Assembler-Quelltext, `2` falsche Aufrufparameter oder
-Ein-/Ausgabefehler (auch für die noch nicht umgesetzten Befehle `monitor` und `serve`).
+Ein-/Ausgabefehler.
 
 Adressen und Zahlen dürfen in allen Schreibweisen des Assemblers angegeben werden:
 `4096`, `$1000`, `0x1000`, `%1000000000000`.
@@ -59,3 +61,21 @@ examples/hello.s: 34 bytes, $001000, 0 error(s)
 $ m68ktool dis hello.bin --org 0x1000 -c examples/hello.comments.txt --no-bytes
 $ m68ktool dis hello.bin --org 0x1000 --asm -o re.s && m68ktool asm re.s -o re.bin && cmp hello.bin re.bin
 ```
+
+## `monitor` – interaktiver Monitor
+
+```
+m68ktool monitor [image] [--org <hex>] [--amiga] [--no-files]
+```
+
+`image` (Raw, S-Record oder Amiga-Hunk) wird beim Start geladen (`--org`: Ladeadresse); `--amiga` wählt die Amiga-500-Speicherkarte;
+`--no-files` sperrt die Dateibefehle. Befehle und Beispiel: [monitor.md](monitor.md). Mit einer Datei oder Pipe auf stdin läuft er als
+Skript (ohne Banner und Prompt).
+
+## `serve` – Emulator-Server für Agenten
+
+```
+m68ktool serve [--allow-files]
+```
+
+JSON-Zeilenprotokoll auf stdin/stdout, siehe [agent-protocol.md](agent-protocol.md).

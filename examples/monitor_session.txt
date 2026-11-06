@@ -1,0 +1,19 @@
+sym twice 1014
+a 1000
+start: MOVEQ #5,D0
+MOVEQ #0,D1
+loop: ADD.W D0,D1
+SUBQ.W #1,D0
+BNE.S loop
+MOVE.W D1,$2000.W
+BSR.S twice
+STOP #$2700
+twice: ADD.W D1,D1
+RTS
+
+d start 6
+b twice
+g start
+u
+m 2000 2
+q

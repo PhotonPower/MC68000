@@ -8,7 +8,8 @@ namespace {
 
 class Parser {
 public:
-    Parser(const std::string& s, const SymbolLookup& lookup, std::int64_t pc) : s_(s), lookup_(lookup), pc_(pc) {}
+    Parser(const std::string& s, const SymbolLookup& lookup, std::int64_t pc, bool hexDefault)
+        : s_(s), lookup_(lookup), pc_(pc), hexDefault_(hexDefault) {}
 
     ExprResult run() {
         ExprResult r;
@@ -225,6 +226,26 @@ private:
                 i_ += 2;
                 return parseRadix(16, "hexadecimal");
             }
+            if (hexDefault_) {
+                // 1B, 4000, 100. (decimal)
+                const std::size_t begin = i_;
+                while (i_ < s_.size() && digitValue(s_[i_]) < 16) ++i_;
+                const std::string digits = s_.substr(begin, i_ - begin);
+                if (i_ < s_.size() && s_[i_] == '.') {
+                    ++i_;
+                    for (const char d : digits)
+                        if (!std::isdigit(static_cast<unsigned char>(d))) {
+                            fail("a number with a trailing '.' must be decimal");
+                            return 0;
+                        }
+                    return std::stoll(digits, nullptr, 10);
+                }
+                if (digits.size() > 16) {
+                    fail("number too long");
+                    return 0;
+                }
+                return static_cast<std::int64_t>(std::stoull(digits, nullptr, 16));
+            }
             return parseRadix(10, "decimal");
         }
         if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '.') {
@@ -234,6 +255,9 @@ private:
             }
             std::int64_t v = 0;
             if (lookup_ && lookup_(name, v)) return v;
+            if (hexDefault_ && name.size() <= 16 && name.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos) {
+                return static_cast<std::int64_t>(std::stoull(name, nullptr, 16));  // DEAD, FF, ...
+            }
             if (!undefined_) undefinedName_ = name;
             undefined_ = true;
             return 0;
@@ -245,6 +269,7 @@ private:
     const std::string& s_;
     const SymbolLookup& lookup_;
     std::int64_t pc_;
+    bool hexDefault_;
     std::size_t i_ = 0;
     std::string err_;
     bool undefined_ = false;
@@ -254,7 +279,7 @@ private:
 }  // namespace
 
 ExprResult ExpressionEvaluator::evaluate(const std::string& text) const {
-    return Parser(text, lookup_, pc_).run();
+    return Parser(text, lookup_, pc_, hexDefault_).run();
 }
 
 }  // namespace m68k

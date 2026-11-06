@@ -86,5 +86,37 @@ int main() {
     CHECK(!eval("'").ok);
     CHECK(!eval("#5").ok);
 
+    // hexadecimal default (monitor mode)
+    {
+        auto hx = [](const std::string& text) {
+            const ExpressionEvaluator ev(
+                [](const std::string& n, std::int64_t& v) {
+                    const auto it = g_symbols.find(n);
+                    if (it == g_symbols.end()) return false;
+                    v = it->second;
+                    return true;
+                },
+                0x1000, true);
+            return ev.evaluate(text);
+        };
+        CHECK_EQ(hx("4000").value, std::int64_t{0x4000});
+        CHECK_EQ(hx("FF").value, std::int64_t{0xFF});
+        CHECK_EQ(hx("1B").value, std::int64_t{0x1B});
+        CHECK_EQ(hx("dead").value, std::int64_t{0xDEAD});     // a name made of hex digits is a number ...
+        CHECK_EQ(hx("100.").value, std::int64_t{100});       // ... a trailing dot makes a number decimal
+        CHECK_EQ(hx("$10").value, std::int64_t{16});
+        CHECK_EQ(hx("0x10").value, std::int64_t{16});
+        CHECK_EQ(hx("%101").value, std::int64_t{5});
+        CHECK_EQ(hx("foo+1B").value, std::int64_t{100 + 0x1B});  // known symbols win
+        CHECK_EQ(hx("bar*10").value, std::int64_t{7 * 16});
+        CHECK_EQ(hx("*+10").value, std::int64_t{0x1010});
+        CHECK(!hx("12.A").ok);                                 // '.' only after decimal digits
+        CHECK(!hx("zzz").ok || hx("zzz").undefined);
+        CHECK(hx("zzz").undefined);
+        g_symbols["dead"] = 5;
+        CHECK_EQ(hx("dead").value, std::int64_t{5});          // a symbol named like a hex number wins
+        g_symbols.erase("dead");
+    }
+
     return finish("expression");
 }

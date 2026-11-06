@@ -56,7 +56,7 @@ derselben Bibliothek.
 | `analysis.hpp`                      | Codefluss-Analyse: Befehle, Routinen, Aufrufgraph, Bibliotheksaufrufe | fertig  |
 | `annotations.hpp`                   | Namen, Dokumentation, Variablen, Datenbereiche, Kommentare; JSON | fertig  |
 | `listing.hpp`                       | verifiziertes, neu assemblierbares Listing                   | fertig  |
-| `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle                               | geplant |
+| `monitor.hpp`                       | `Monitor`: Zeilenschnittstelle (`execute(zeile) → Text`), Hex-Standard | fertig  |
 
 ## Die Befehlstabelle
 

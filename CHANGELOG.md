@@ -7,6 +7,10 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Meilenstein 0.4:** `m68ktool monitor` – klassischer Maschinensprache-Monitor (`m68k::Monitor`, Zeilenschnittstelle ohne eigene
+  Ein-/Ausgabe) mit Hex als Standard, Assemble-Modus, Lauf-/Debug-Befehlen, Symbolen, Dateibefehlen (Quelltext, Raw, S-Record,
+  Hunk), Checkpoints, Snapshots, Interrupts und Amiga-Speicherkarte. Der Ausdrucksauswerter kennt dafür einen Hex-Standard.
+  Tests `monitor` (rund 160 Prüfungen, 5000 Zufallszeilen ohne Absturz), Beispielsitzung `examples/monitor_session.txt`.
 - **Meilenstein 0.5 (Werkzeuge):** Reverse-Engineering-Befehle im Agenten-Protokoll: `analyze`, `routines`, `listing`, `ann_label`,
   `ann_routine`, `ann_variable`, `ann_data`, `ann_comment`, `ann_remove`, `ann_title`, `ann_list`, `ann_save`, `ann_load`.
   Neue Bausteine `m68k::Analysis` (Codefluss, Routinen, Aufrufgraph, Bibliotheksaufrufe), `m68k::Annotations` und `renderListing`
