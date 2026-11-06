@@ -1,0 +1,11 @@
+# Normalise line endings for text files...
+* text=auto
+
+# Binary image / ROM files
+*.bin binary
+*.rom binary
+*.adf binary
+*.st binary
+*.prg binary
+*.tos binary
+*.hunk binary
