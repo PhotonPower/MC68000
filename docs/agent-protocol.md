@@ -73,7 +73,7 @@ Gesamtzähler seit dem letzten `reset`.
 | `step_over` | – | ein Befehl; bei `BSR`/`JSR` bis zur Rückkehr |
 | `run` | `until?`, `max_instructions?` | bis Breakpoint/Watchpoint/`STOP`/Limit; mit `until` bis der PC diese Adresse erreicht |
 | `run_until_return` | `max_instructions?` | bis die aktuelle Routine zurückkehrt (`RTS`/`RTR`/`RTE`) |
-| `call` | `addr`, `regs?`, `return_address?` (`0xFFFFF0`), `max_instructions?` | Routine wie eine Funktion aufrufen: Rücksprungadresse auf den Stapel, Register setzen, ausführen bis zur Rückkehr. Antwort enthält `returned` (true, wenn sauber zurückgekehrt) |
+| `call` | `addr`, `regs?`, `return_address?` (`0xFFFFF0`), `max_instructions?` | Routine wie eine Funktion aufrufen: Rücksprungadresse auf den Stapel, Register setzen, ausführen bis zur Rückkehr. Antwort enthält `returned`: **true nur, wenn die Routine wirklich zurückgekehrt ist**, also der PC die Rücksprungadresse erreicht hat **und** `A7` wieder den Wert vor dem Aufruf hat. Ein Sprung durch einen Zeiger, der noch 0 ist, läuft durch leeren Speicher und kann die Rücksprungadresse zufällig streifen; das ist keine Rückkehr (`returned:false`, `stop:"address"`, dazu ein `note`). Auf der Amiga-Maschine zählen `run`, `step`, `step_over`, `run_until_return` und `call` außerdem die Befehle, die aus **leerem Speicher** geholt wurden (nicht abgebildet, oder der ROM-Bereich ohne ROM): `fetched_from_empty_memory` und `first_empty_fetch` |
 | `break` / `unbreak` | `addr` | Breakpoint setzen / entfernen |
 | `watch` / `unwatch` | `addr`, `len?` (1), `kind?` (`write`, `read`, `access`) | Speicherüberwachung; `run` hält **nach** dem zugreifenden Befehl |
 | `breaks` / `clear_breaks` | – | Breakpoints und Watchpoints auflisten / alles löschen |

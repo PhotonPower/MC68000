@@ -120,6 +120,58 @@ class ExampleProgramTest(unittest.TestCase):
         finally:
             s.close()
 
+    def _server_with_example(self):
+        s = annotate.M68kServer(M68KTOOL)
+        s.ok(cmd="machine", type="amiga500", chip_kb=512, os=True)
+        s.ok(cmd="load_file", file=self.plain, type="hunk", addr="0x20000")
+        s.ok(cmd="analyze", entries=["0x020000"], reset=True)
+        s.ok(cmd="checkpoint", name="baseline")
+        tools = annotate.Tools(s)
+        print_routine = next(r for r in s.ok(cmd="routines")["routines"] if r["addr"] == "0x02004A")
+        tools.range = (print_routine["start"], print_routine["end"])
+        return s, tools
+
+    def test_run_routine_does_not_pretend_that_a_wild_jump_returned(self):
+        """`print` calls Write through the library base in the variable dosbase. Run on its own that variable is 0: JSR -48(A6) jumps into empty
+        memory. The report must not call that a return, must say what happened, and must not count the caller's own set-up as a change."""
+        s, tools = self._server_with_example()
+        try:
+            text = tools.t_run_routine("0x02004A", registers={"A0": "0x030000"}, memory=[{"addr": "0x030000", "hex": "48692074686572650A00"}])
+        finally:
+            s.close()
+        self.assertIn("returned: False", text)
+        self.assertIn("did not return", text)
+        self.assertIn("EMPTY memory (first at 0xFFFFD0)", text)
+        self.assertIn("memory changed: nothing", text)          # the string the caller wrote is not a change of the routine
+        self.assertNotIn("stop: returned", text)
+
+    def test_run_routine_with_the_state_the_program_would_have(self):
+        """The same routine, after the program entry has run as `setup` (it opens dos.library and stores the base and the output handle in the
+        variables): a clean return, the text on the console, one Write; the setup's own output and library calls are not part of the report."""
+        s, tools = self._server_with_example()
+        try:
+            text = tools.t_run_routine("0x02004A", registers={"A0": "0x030000"}, setup=[{"addr": "0x020000"}],
+                                       memory=[{"addr": "0x030000", "hex": "48692074686572650A00"}])
+        finally:
+            s.close()
+        self.assertIn("setup 0x020000: returned, 378 instructions", text)
+        self.assertIn("stop: returned  returned: True", text)
+        self.assertNotIn("EMPTY memory", text)
+        self.assertEqual(text.count("dos.library -48 Write"), 1)                # the one Write of `print`; the seven of the entry are not counted
+        self.assertNotIn("OpenLibrary", text)
+        self.assertIn("text written to the console (dos Write): 'Hi there\\n'", text)
+        self.assertNotIn("Hello from", text)
+        self.assertIn("memory changed: nothing", text)
+
+    def test_run_routine_reports_a_setup_that_does_not_return(self):
+        s, tools = self._server_with_example()
+        try:
+            text = tools.t_run_routine("0x02004A", setup=[{"addr": "0x02004A", "registers": {"A0": "0x030000"}}], max_instructions=500)
+            self.assertIn("setup 0x02004A: did NOT return", text)
+            self.assertTrue(tools.dispatch("run_routine", {"addr": "0x02004A", "setup": [{"nope": 1}]}).startswith("error"))
+        finally:
+            s.close()
+
     def test_dry_run_of_the_orchestrator_contacts_no_model(self):
         mock = MockOllama({})
         url = mock.start()

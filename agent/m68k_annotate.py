@@ -183,7 +183,10 @@ TOOLS = [
          "registers": {"type": "object", "description": 'Initial registers, e.g. {"D0": 5, "A0": "0x030000"}'},
          "memory": {"type": "array", "description": 'Memory to set up first: [{"addr": "0x030000", "hex": "48454C4C4F00"}]',
                     "items": {"type": "object", "properties": {"addr": ADDR, "hex": {"type": "string"}}}},
-         "max_instructions": {"type": "integer", "description": "default 200000"},
+         "setup": {"type": "array", "description": 'Routines to run FIRST on the same machine, e.g. the program entry that opens libraries and initialises variables: '
+                                                  '[{"addr": "0x020000"}] (optional "registers"). Their console output, library calls and memory changes are not part of the report.',
+                   "items": {"type": "object", "properties": {"addr": ADDR, "registers": {"type": "object"}}}},
+         "max_instructions": {"type": "integer", "description": "default 200000 (also the limit for each setup routine)"},
          "keep_state": {"type": "boolean", "description": "keep the changes (then call reset_machine when done)"}},
         ["addr"]),
     _fn("reset_machine", "Restore the machine to the state it had when the analysis started.", {}),
@@ -431,35 +434,53 @@ class Tools:
         return "\n".join(rows) + f'\nascii: {r["ascii"]}'
 
     # ---- running ----
-    def t_run_routine(self, addr, registers=None, memory=None, max_instructions=200000, keep_state=False):
+    def t_run_routine(self, addr, registers=None, memory=None, max_instructions=200000, keep_state=False, setup=None):
         s = self.s
+        limit = max(1, min(int(max_instructions), 5_000_000))  # a runaway loop must not stall the whole analysis
         s.ok(cmd="rollback", name="baseline")
+        setup_lines = []
+        for step in setup or []:
+            if not isinstance(step, dict) or "addr" not in step:
+                raise ValueError('each setup entry needs an "addr"')
+            sregs = {k: (norm_addr(v) if isinstance(v, str) else v) for k, v in (step.get("registers") or {}).items()}
+            sreply = s.call(cmd="call", addr=norm_addr(step["addr"]), regs=sregs, max_instructions=limit)
+            if not sreply.get("ok"):
+                return f"error: setup routine {step['addr']}: {sreply.get('error')}"
+            setup_lines.append(f'setup {step["addr"]}: {"returned" if sreply.get("returned") else "did NOT return (stop: " + sreply["stop"] + ")"}, {sreply["instructions"]} instructions')
         for m in memory or []:
             if not isinstance(m, dict) or "addr" not in m or "hex" not in m:
                 raise ValueError('each memory entry needs "addr" and "hex"')
             digits = re.sub(r"0x|[\s,]", "", str(m["hex"]), flags=re.I)
             s.ok(cmd="write", addr=norm_addr(m["addr"]), hex=digits)
         regs = {k: (norm_addr(v) if isinstance(v, str) else v) for k, v in (registers or {}).items()}
+        s.ok(cmd="checkpoint", name="pre_run")  # what the routine changes is measured from here: the memory the caller set up does not count
         s.ok(cmd="io")  # empty the device-write log
         s.ok(cmd="libcalls")  # ... the library-call log
         s.ok(cmd="console")   # ... and the console
-        limit = max(1, min(int(max_instructions), 5_000_000))  # a runaway loop must not stall the whole analysis
         reply = s.call(cmd="call", addr=norm_addr(addr), regs=regs, max_instructions=limit)
         if not reply.get("ok"):
+            s.call(cmd="drop", name="pre_run")
             return f"error: {reply.get('error')}"
         r = reply["regs"]
-        out = [f'stop: {reply["stop"]}  returned: {reply.get("returned")}  instructions: {reply["instructions"]}']
+        out = setup_lines + [f'stop: {reply["stop"]}  returned: {reply.get("returned")}  instructions: {reply["instructions"]}']
         out.append("registers after: " + "  ".join(f"D{i}={r[f'D{i}'][2:]}" for i in range(8)))
         out.append("                 " + "  ".join(f"A{i}={r[f'A{i}'][2:]}" for i in range(8)) + f'  flags={r["flags"]}')
-        if reply["stop"] != "returned":
+        if reply["stop"] != "returned" and not reply.get("note"):
             out.append(f'NOTE: it did not return (stop: {reply["stop"]}). For a program entry or a main loop that is normal: the state shown is the '
                        f'state after {reply["instructions"]} instructions. Use a smaller max_instructions to look at an earlier moment.')
+        if reply.get("note"):
+            out.append("NOTE: " + reply["note"])
+        if reply.get("fetched_from_empty_memory"):
+            out.append(f'NOTE: {reply["fetched_from_empty_memory"]} instructions were fetched from EMPTY memory (first at {reply["first_empty_fetch"]}): the code jumped through a pointer, '
+                       "library base or return address that is not set up. Routines often depend on variables that the program entry initialises (library bases, handles): "
+                       "run the routines that set them up first with `setup` (usually the program entry) or write the expected values with `memory`; otherwise the result below is meaningless.")
         if reply.get("exceptions"):
             out.append(f'EXCEPTIONS: {reply["exceptions"]} (last: {vector_name(reply.get("last_exception", 0))}). A wild or odd pointer in a register '
                        "usually means you did not set up the inputs the routine expects; set registers/memory and run again.")
 
         sp = to_int(r["A7"])
-        diff = s.ok(cmd="diff", name="baseline")
+        diff = s.ok(cmd="diff", name="pre_run")
+        s.call(cmd="drop", name="pre_run")
         shown = [x for x in diff["ranges"] if not (sp - 0x80 <= to_int(x["addr"]) < sp + 0x80)]
         if shown:
             out.append(f"memory changed ({len(shown)} ranges; stack area omitted; small ranges first):")
@@ -623,6 +644,9 @@ the call fail).
 
 Efficiency: you may and should make SEVERAL tool calls in ONE reply (for example all name_variable and add_comment calls together, then
 finish_routine). Every reply costs time, and you only have a limited number of replies per routine.
+
+A routine often depends on state that other code sets up: library bases, handles, variables. Run it with `setup` (usually the program entry, which opens the libraries
+and initialises the variables) instead of guessing values; run_routine tells you when code ran into empty memory or did not really return.
 
 Be brief. Do not re-derive MC68000 basics and do not repeat yourself. Your FIRST reply must already be a tool call (usually run_routine).
 Prefer testing over long reasoning: a run tells you more than a page of thinking.

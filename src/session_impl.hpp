@@ -284,6 +284,16 @@ struct Session::Impl {
     Json cmdMachine();
     Json cmdIo();
     Json cmdOs(const std::string& cmd);
+    /// Counts instructions fetched from empty memory (unmapped, or the ROM area without a ROM) while it is alive; only on the Amiga machine.
+    struct EmptyFetchGuard {
+        Impl& impl;
+        std::function<void(const Registers&, Address, Word)> previous;
+        unsigned count = 0;
+        Address first = 0;
+        explicit EmptyFetchGuard(Impl& i);
+        ~EmptyFetchGuard();
+        void report(Json& j) const;
+    };
     Json cmdHelp();
     // reverse engineering (session_analysis.cpp)
     bool isAnalysisCommand(const std::string& cmd) const;

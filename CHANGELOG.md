@@ -11,7 +11,15 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte mit OS-Emulation,
 Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orchestrator ist noch nicht mit einem echten Modell erprobt (siehe docs/roadmap.md).
 
+### Behoben
+- **`call` meldete `returned: true`, obwohl die Routine nie zurückgekehrt war:** Ein Sprung durch einen Zeiger, der noch 0 war (z. B. `JSR -48(A6)` mit `A6 = 0`), lief durch leeren Speicher und kam zufällig an der Rücksprungadresse `$FFFFF0` vorbei. Jetzt zählt nur der PC auf der Rücksprungadresse **mit** dem Stapelzeiger von vor dem Aufruf; sonst `returned:false` mit einem `note`.
+  Gefunden beim ersten Durchspielen einer Routine des Beispiels in der Rolle des Modells.
+- Der Bericht von `run_routine` zählte den vom Aufrufer vorbereiteten Speicher als Änderung der Routine; gemessen wird jetzt ab dem Zustand nach der Vorbereitung.
+
 ### Hinzugefügt
+- `run_routine` hat den Parameter **`setup`** (Routinen, die vorher auf derselben Maschine laufen, z. B. der Programmeinsprung): Routinen, die von Zustand abhängen, den anderer Code herstellt (Bibliotheksbasen, Handles, Variablen), waren sonst nicht testbar –
+  `rollback` setzt auch die geöffneten Bibliotheken zurück, sodass sich der Zustand nicht von Hand schreiben lässt. Die Ausgaben und Aufrufe des `setup` zählen nicht zum Bericht.
+- Auf der Amiga-Maschine melden `run`, `step`, `step_over`, `run_until_return` und `call` die Zahl der Befehle, die aus **leerem Speicher** geholt wurden (`fetched_from_empty_memory`, `first_empty_fetch`); der Bericht von `run_routine` erklärt, was das meist bedeutet.
 - **Erkennung von Einzelvariablen** in `data_regions`: ein Speicheroperand, den der Code immer mit derselben Größe `.W` oder `.L` anspricht, wird als Wort- bzw. Langwort-Variable vorgeschlagen; das Listing zeigt `DC.W`/`DC.L` statt einzelner Bytes.
   Kein Vorschlag bei Bytes, gemischten Größen, `LEA`/`PEA`, ungerader Adresse. Bekannte Grenze: ein direkter Zugriff in die Mitte einer Tabelle schneidet sie ab (siehe docs/reverse-engineering.md).
 - **Robustheitstest** (`tests/test_robustness.cpp`): zufällige Eingaben für JSON-Parser, Server (zufällige Befehle mit Argumenten aller JSON-Typen), Hunk-Lader, S-Records, Snapshot- und Projektdateien; läuft auch unter den Sanitizern.

@@ -434,6 +434,7 @@ Json Session::Impl::cmdStep() {
     const std::string cmd = str("cmd");
     const std::uint64_t exBefore = cpu.exceptionCount();
     s.applyWatches();
+    EmptyFetchGuard guard(*this);
     if (cmd == "step") {
         const std::int64_t n = arg("n") ? number(need("n")) : 1;
         if (n < 1) throw SessionError("n must be at least 1");
@@ -463,13 +464,39 @@ Json Session::Impl::cmdStep() {
         }
         Json j = runReply(total, exBefore);
         if (wantTrace) j.set("trace", trace);
+        guard.report(j);
         return j;
     }
-    if (cmd == "step_over") return runReply(cpu.stepOver(limit()), exBefore);
-    if (cmd == "run_until_return") return runReply(cpu.runUntilReturn(limit()), exBefore);
-    // run
-    if (const Json* u = arg("until")) return runReply(cpu.runUntil(address(*u), limit()), exBefore);
-    return runReply(cpu.run(limit()), exBefore);
+    Json j;
+    if (cmd == "step_over") j = runReply(cpu.stepOver(limit()), exBefore);
+    else if (cmd == "run_until_return") j = runReply(cpu.runUntilReturn(limit()), exBefore);
+    else if (const Json* u = arg("until")) j = runReply(cpu.runUntil(address(*u), limit()), exBefore);
+    else j = runReply(cpu.run(limit()), exBefore);
+    guard.report(j);
+    return j;
+}
+
+Session::Impl::EmptyFetchGuard::EmptyFetchGuard(Impl& i) : impl(i) {
+    if (!impl.s.amiga_) return;
+    previous = impl.s.cpu_->traceHook;
+    const Amiga500* amiga = impl.s.amiga_.get();
+    impl.s.cpu_->traceHook = [this, amiga](const Registers& r, Address pc, Word word) {
+        if (previous) previous(r, pc, word);
+        const Amiga500::Region region = amiga->classify(pc);
+        if (region == Amiga500::Region::Unmapped || (region == Amiga500::Region::Rom && !amiga->hasRom())) {
+            if (count == 0) first = pc;
+            ++count;
+        }
+    };
+}
+
+Session::Impl::EmptyFetchGuard::~EmptyFetchGuard() {
+    if (impl.s.amiga_) impl.s.cpu_->traceHook = previous;
+}
+
+void Session::Impl::EmptyFetchGuard::report(Json& j) const {
+    if (count == 0) return;
+    j.set("fetched_from_empty_memory", count).set("first_empty_fetch", hexAddr(first));
 }
 
 Json Session::Impl::cmdCall() {
@@ -483,11 +510,20 @@ Json Session::Impl::cmdCall() {
     s.applyWatches();
     wake();
     const std::uint64_t exBefore = cpu.exceptionCount();
+    const Address spBefore = cpu.registers().a[7];
+    EmptyFetchGuard guard(*this);
     const RunResult r = cpu.call(entry, ret, limit());
     Json j = runReply(r, exBefore);
-    const bool returned = r.reason == StopReason::Reached && cpu.registers().pc == ret;
+    const bool atSentinel = r.reason == StopReason::Reached && cpu.registers().pc == ret;
+    // Reaching the return address is not a return: a jump into empty memory (JSR through an uninitialised pointer) runs through zero words and
+    // can come across it. A real return leaves the stack pointer where it was before the call.
+    const bool returned = atSentinel && cpu.registers().a[7] == spBefore;
     j.set("returned", returned);
     if (returned) j.set("stop", "returned");
+    else if (atSentinel)
+        j.set("note", "the PC reached the return address but the routine did not return: A7 is " + hexAddr(cpu.registers().a[7]) + ", after a return it would be " +
+                          hexAddr(spBefore) + " (a jump into empty memory, e.g. JSR through a pointer or library base that is still 0?)");
+    guard.report(j);
     return j;
 }
 

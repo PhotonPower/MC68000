@@ -142,6 +142,33 @@ int main() {
         CHECK(ok(call(s, "{\"cmd\":\"help\"}")));
     }
 
+    // ---- a call only counts as returned if it really returned --------------------------------------------------------------------------
+    {
+        for (const char* machine : {"generic", "amiga500"}) {
+            Session s;
+            CHECK(ok(call(s, std::string("{\"cmd\":\"machine\",\"type\":\"") + machine + "\"}")));
+            // JSR through A6 = 0 runs through empty memory and comes across the return address $FFFFF0: that is not a return
+            CHECK(ok(call(s, asmLine("        ORG $1000\nbad:    SUBA.L A6,A6\n        JSR -48(A6)\n        RTS\ngood:   MOVEQ #5,D0\n        BSR sub\n        RTS\nsub:    ADDQ.W #1,D0\n        RTS\n"))));
+            const Json bad = call(s, "{\"cmd\":\"call\",\"addr\":\"bad\",\"max_instructions\":1000}");
+            CHECK(ok(bad));
+            CHECK(!bad.find("returned")->asBool());
+            CHECK_EQ(str(bad, "stop"), std::string("address"));
+            CHECK(str(bad, "note").find("did not return") != std::string::npos);
+            if (std::string(machine) == "amiga500") {
+                CHECK(bad.find("fetched_from_empty_memory") != nullptr);
+                CHECK_EQ(str(bad, "first_empty_fetch"), std::string("0xFFFFD0"));
+            } else {
+                CHECK(bad.find("fetched_from_empty_memory") == nullptr);   // the generic machine has RAM everywhere: nothing is "empty"
+            }
+            const Json good = call(s, "{\"cmd\":\"call\",\"addr\":\"good\",\"max_instructions\":1000}");
+            CHECK(good.find("returned")->asBool());
+            CHECK_EQ(str(good, "stop"), std::string("returned"));
+            CHECK(good.find("note") == nullptr);
+            CHECK(good.find("fetched_from_empty_memory") == nullptr);
+            CHECK_EQ(str(*good.find("regs"), "D0"), std::string("0x00000006"));
+        }
+    }
+
     // ---- breakpoints, watchpoints, stepping, calls ---------------------------------------------------------------------
     {
         Session s;
