@@ -1,6 +1,7 @@
 #include "m68k/amiga_os.hpp"
 
 #include <algorithm>
+#include "m68k/decoder.hpp"
 #include <cstring>
 
 namespace m68k {
@@ -193,6 +194,14 @@ bool AmigaOs::onExecute(Cpu& cpu) {
     call.function = functionName(lib, call.offset);
     call.minVersion = functionVersion(lib, call.offset);
     call.caller = rd32(r.a[7]);
+    for (const Address len : {Address{4}, Address{2}, Address{6}}) {   // JSR d16(A6), JSR (A6), JSR abs.L: the instruction ends at the return address
+        if (call.caller < len) continue;
+        const Instruction in = decode(mem_, call.caller - len);
+        if (in.valid && in.length() == len && in.mnemonic.rfind("JSR", 0) == 0) {
+            call.callSite = call.caller - len;
+            break;
+        }
+    }
     call.d0 = r.d[0]; call.d1 = r.d[1]; call.d2 = r.d[2]; call.d3 = r.d[3];
     call.a0 = r.a[0]; call.a1 = r.a[1];
     dispatch(cpu, call, lib);

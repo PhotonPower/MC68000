@@ -478,7 +478,7 @@ std::string Monitor::Impl::run(const std::vector<std::string>& a) {
         for (const LibCall& lc : m.os_->log()) {
             out += "  " + lc.library + " " + std::to_string(lc.offset) + (lc.function.empty() ? "" : " " + lc.function) +
                    (lc.emulated ? "" : "  (NOT emulated: returned 0)") + (lc.minVersion >= 36 ? "  (V36+: not in Kickstart 1.x)" : "") + "  D0=" + h8(lc.d0) + " D1=" + h8(lc.d1) + " A0=" + h8(lc.a0) +
-                   " A1=" + h8(lc.a1) + " -> D0=" + h8(lc.result) + (lc.note.empty() ? "" : "  [" + lc.note + "]") + "  called from " + h6(lc.caller) + "\n";
+                   " A1=" + h8(lc.a1) + " -> D0=" + h8(lc.result) + (lc.note.empty() ? "" : "  [" + lc.note + "]") + "  " + (lc.callSite ? "call at " + h6(lc.callSite) : "called from " + h6(lc.caller)) + "\n";
         }
         m.os_->clearLog();
         return out.empty() ? "no library calls\n" : out;

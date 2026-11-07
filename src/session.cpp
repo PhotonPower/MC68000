@@ -19,6 +19,7 @@ void Session::applyWatches() {
 }
 
 void Session::resetMachine(bool clearMemory) {
+    if (clearMemory) hunks_.clear();
     if (clearMemory) memory_->clear();
     Registers& r = cpu_->registers();
     r = Registers{};
@@ -390,6 +391,7 @@ Json Session::Impl::cmdLoadFile() {
         const HunkImage img = loadHunkFile(bytes, base);
         for (const Segment& seg : img.segments) writeBytes(seg.address, seg.bytes);
         if (!img.hunks.empty()) rememberRange(img.hunks.front().address, img.end);
+        s.hunks_ = img.hunks;
         Json hunks = Json::array();
         for (const HunkInfo& h : img.hunks) {
             Json hj = Json::object();
@@ -659,6 +661,7 @@ Json Session::Impl::cmdOs(const std::string& cmd) {
         if (!c.function.empty()) e.set("function", c.function);
         if (c.minVersion) e.set("min_version", c.minVersion);
         e.set("emulated", c.emulated).set("caller", hexAddr(c.caller));
+        if (c.callSite) e.set("call_site", hexAddr(c.callSite));
         Json args = Json::object();
         args.set("D0", hex32(c.d0)).set("D1", hex32(c.d1)).set("D2", hex32(c.d2)).set("D3", hex32(c.d3));
         args.set("A0", hex32(c.a0)).set("A1", hex32(c.a1));

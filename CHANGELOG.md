@@ -12,6 +12,14 @@ Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulato
 Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orchestrator ist noch nicht mit einem echten Modell erprobt (siehe docs/roadmap.md).
 
 ### Behoben
+- **Befunde des ersten Blindtests** (ein Agent übernahm die Rolle des Modells und kommentierte ein unbekanntes Programm blind; alle neun Routinen richtig erkannt und benannt, dazu zwölf Werkzeugprobleme):
+  - Der Ausschnitt einer Routine (`show` bzw. der Auftrag an das Modell) zeigte Strings und Daten nur als nackte Adressen. Jetzt steht darunter **„Referenced from this routine“** (neuer Befehl `references`: Name, Art, Inhalt, Adresse der benutzenden Befehle), und der EQU-Vorspann entfällt (`listing equates:false`).
+  - Der **Kommentar einer Variablen ging verloren**, wenn an ihrer Adresse schon ein automatisch erkannter Datenbereich begann; ein benannter Puffer aus Nullen wurde zu 64 × `DC.B $00` statt `DS.B 64`.
+  - Das Listing zeigt die **Hunk-Grenzen** als Kommentare und schreibt Nullbytes in einem BSS-Hunk ab 4 Byte als `DS.B`.
+  - Die Vollständigkeitsprüfung ließ **PC-relativ adressierte Strings und Tabellen** durch und bemängelte fehlende `inputs`/`outputs`/`clobbers`/`confidence` nicht; beides wird jetzt verlangt. `m68k_drive.py finish` ist **streng** (`--accept-gaps` für die Regel des Orchestrators).
+  - `run_routine`: Die Bibliotheksaufrufe zeigen D0–D3/A0/A1 und die Adresse des **`JSR` selbst** (`call_site`; vorher stand die Rücksprungadresse da, ein Kommentar dort traf die falsche Zeile); Speicheränderungen mit **ASCII-Spalte**; Hinweise bei Schreibzugriffen **hinter das Programmende** und **in Code**.
+  - `mark_data kind=text` braucht keine Länge mehr (der String endet mit seinem NUL).
+  - Bekannte Grenzen (dokumentiert): eine Tabelle, die nur an eine andere Routine übergeben wird, erkennt die Analyse nicht; `setup` lässt auch ein `CloseLibrary` laufen.
 - **`m68ktool dis`** (Befund eines Vergleichs mit vasm/vlink): Die Ablaufanalyse folgt jetzt **Sprungtabellen**; ihre Fälle (`cmd_hello`, `cmd_sum`, …) wurden vorher als `DC.B` angezeigt. Hunk-Dateien werden standardmäßig an `0x20000` geladen
   (wie bei `load_file` und im Monitor), nicht an 0: Dort stand `4.W` (ExecBase) als Label `L_000004` mitten im Code. Eine **Objektdatei** (`HUNK_UNIT`) wird in `dis`, `load_file` und im Monitor mit dem Hinweis „erst binden“ abgelehnt, statt still als Rohdaten gelesen zu werden.
   Ein vlink-gebundenes Programm gleicher Quelle läuft im Emulator mit identischem Ergebnis (379 Befehle, gleiche Ausgabe und Bibliotheksaufrufe) und unterscheidet sich von unserer Hunk-Ausgabe nur im Füllwort hinter dem Code (`0000` bei uns, `NOP` bei vasm).

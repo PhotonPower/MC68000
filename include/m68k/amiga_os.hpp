@@ -18,6 +18,7 @@ struct LibCall {
     bool emulated = false; ///< false: only logged; the call returned D0 = 0 and did nothing else
     unsigned minVersion = 0; ///< first library version that has the function (33 = Kickstart 1.2, 36 = Kickstart 2.0); 0 = not in the tables
     Address caller = 0;    ///< return address of the call
+    Address callSite = 0;  ///< address of the JSR instruction itself (0 if it could not be found): where a comment belongs
     Long d0 = 0, d1 = 0, d2 = 0, d3 = 0, a0 = 0, a1 = 0;  ///< arguments (registers at the call)
     Long result = 0;       ///< D0 afterwards
     std::string note;      ///< e.g. the name given to OpenLibrary, or what a Write printed

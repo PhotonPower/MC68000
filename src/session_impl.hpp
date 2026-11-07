@@ -299,6 +299,7 @@ struct Session::Impl {
     Json cmdAnalysis(const std::string& cmd);
     void rememberRange(Address from, Address to) {
         if (to > from) s.programRange_ = std::make_pair(from, to);
+        s.hunks_.clear();   // a hunk load sets them again right afterwards
     }
 };
 

@@ -49,6 +49,11 @@ class DriveTest(unittest.TestCase):
         self.assertIn("ROUTINE_ADDR=0x02004A", out)
         self.assertIn("library call JSR -48(A6)", out)
         self.assertIn("MOVEM.L  D0-D3/A0-A1/A6,-(A7)", out)
+        self.assertNotIn(" EQU ", out)                                         # no prelude of names in the excerpt a model reads
+        out_main, _ = self.drive("show", "0x020000")
+        self.assertIn("Referenced from this routine", out_main)                # what the operands point at, with the contents
+        self.assertIn('0x0200E8 data_0200E8 (text, 12 bytes): "dos.library"', out_main)
+        self.assertIn("ExecBase_pointer (system)", out_main)
         out, _ = self.drive("show", "0x02004A", "--system")
         self.assertIn("expert MC68000 and Commodore Amiga reverse engineer", out)
 
@@ -70,6 +75,7 @@ class DriveTest(unittest.TestCase):
         self.assertIn("not finished yet", out)
         self.assertIn("labels without a real name", out)
         self.assertIn("memory locations used by number", out)
+        self.assertIn("document_routine without outputs, clobbers", out)       # a bare name and summary is not a contract
         with open(os.path.join(self.work, "state.json")) as f:
             self.assertEqual(json.load(f)["warned"], ["0x02004A"])
         for name, addr in (("find_end", "0x020052"), ("do_write", "0x02005A")):
@@ -78,7 +84,13 @@ class DriveTest(unittest.TestCase):
         self.drive("tool", "name_variable", json.dumps({"addr": "0x020134", "name": "stdout", "size": 4}))
         self.drive("tool", "add_comment", json.dumps({"addr": "0x02004E", "text": "remember the start of the text"}))
         self.drive("tool", "add_comment", json.dumps({"addr": "0x020056", "text": "count the length"}))
-        # ... and the second call is accepted (the memory of the first call is in the work directory)
+        # ... and a second call does NOT pass while something is missing (the documentation still has no outputs and clobbers)
+        out, _ = self.drive("finish", "0x02004A")
+        self.assertIn("not finished yet", out)
+        self.assertIn("document_routine without outputs, clobbers", out)
+        self.assertNotIn("labels without a real name", out)
+        self.drive("tool", "document_routine", json.dumps({"addr": "0x02004A", "name": "print_string", "summary": "Writes a zero terminated string to the output.",
+                                                           "inputs": "A0 = text", "outputs": "none", "clobbers": "none (all registers are saved)", "confidence": "high"}))
         out, _ = self.drive("finish", "0x02004A")
         self.assertIn("ok: routine finished", out)
         out, _ = self.drive("status")
@@ -98,6 +110,19 @@ class DriveTest(unittest.TestCase):
         self.assertIn("dosbase", text)
         self.assertIn("; remember the start of the text", text)
         self.assertIn("VERIFIED", text.splitlines()[1])
+
+    def test_accept_gaps_is_the_orchestrators_rule(self):
+        """With --accept-gaps the first finish may send you back and the second is final (the rule that keeps a small model from hanging)."""
+        work = os.path.join(self.tmp.name, "work_gaps")
+        self.drive("init", "--fresh", "--hunk", self.hunk, "--m68ktool", M68KTOOL, work=work)
+        self.drive("tool", "document_routine", json.dumps({"addr": "0x020070", "name": "dispatch_command", "summary": "x"}), work=work)
+        out, _ = self.drive("finish", "0x020070", "--accept-gaps", work=work)
+        self.assertIn("not finished yet", out)
+        self.assertIn("a second call is accepted as final", out)
+        out, _ = self.drive("finish", "0x020070", "--accept-gaps", work=work)
+        self.assertIn("ok: routine finished", out)
+        out, _ = self.drive("finish", "0x020070", work=work)                    # the strict rule still sees what is missing
+        self.assertIn("not finished yet", out)
 
     def test_errors_are_plain(self):
         work = os.path.join(self.tmp.name, "empty")

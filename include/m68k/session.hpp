@@ -13,6 +13,7 @@
 #include "m68k/analysis.hpp"
 #include "m68k/annotations.hpp"
 #include "m68k/cpu.hpp"
+#include "m68k/hunk.hpp"
 #include "m68k/json.hpp"
 #include "m68k/memory.hpp"
 #include "m68k/snapshot.hpp"
@@ -68,6 +69,7 @@ private:
     std::unique_ptr<Cpu> cpu_;
     std::unique_ptr<Amiga500> amiga_;  // null = generic machine
     std::unique_ptr<AmigaOs> os_;      // null = no emulated library calls
+    std::vector<HunkInfo> hunks_;      // the hunks of the program loaded last (empty for other images): boundaries in the listing
     std::map<std::string, std::int64_t> symbols_;
     std::map<std::string, Checkpoint> checkpoints_;
     std::vector<Watch> watches_;

@@ -60,7 +60,7 @@ def save_state(work, state):
 class Workspace:
     """The emulator with the program loaded and the analysis done, built from the files in the work directory."""
 
-    def __init__(self, work, verbose=False):
+    def __init__(self, work, verbose=False, accept_gaps=False):
         config_path, _, project_path = paths(work)
         if not os.path.exists(config_path):
             raise DriveError(f"{work} is not a work directory: run `init` first")
@@ -69,6 +69,7 @@ class Workspace:
         self.work = work
         self.args = ann.build_parser().parse_args(argv)
         self.args.project = project_path
+        self.args.accept_gaps = accept_gaps
         self.server = ann.M68kServer(ann.find_m68ktool(self.args.m68ktool))
         self.worker = ann.Annotator(self.server, [], self.args)
         log = io.StringIO()
@@ -80,7 +81,8 @@ class Workspace:
             raise DriveError(str(e)) from e
         if verbose:
             print(log.getvalue(), end="")
-        self.tools = ann.Tools(self.server)
+        self.tools = self.worker.tools            # the same tools (and the program range the setup found) as the orchestrator
+        self.tools.strict = not accept_gaps
         self.state = load_state(work)
 
     def routines(self):
@@ -173,7 +175,7 @@ def cmd_show(a):
 
 
 def cmd_tool(a):
-    ws = Workspace(a.work)
+    ws = Workspace(a.work, accept_gaps=getattr(a, "accept_gaps", False))
     try:
         try:
             args = json.loads(a.args) if a.args else {}
@@ -264,9 +266,10 @@ def main(argv=None):
     t.add_argument("name")
     t.add_argument("args", nargs="?", default="{}", help="the arguments as one JSON object")
     t.add_argument("--routine", help="the routine this call belongs to (needed by finish_routine)")
-    f = sub.add_parser("finish", help="finish_routine for a routine (the first call may send you back, the second is final)")
+    f = sub.add_parser("finish", help="finish_routine for a routine: accepted only if nothing is missing (see --accept-gaps)")
     f.add_argument("addr")
     f.add_argument("--summary")
+    f.add_argument("--accept-gaps", action="store_true", help="the orchestrator's rule: the first call may send you back, the second is final")
     l = sub.add_parser("listing", help="the verified listing")
     l.add_argument("--out")
     sub.add_parser("report", help="what is not finished or has gaps")

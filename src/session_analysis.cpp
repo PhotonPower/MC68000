@@ -25,7 +25,7 @@ std::string hexAddrS(Address a) {
 }  // namespace
 
 bool Session::Impl::isAnalysisCommand(const std::string& cmd) const {
-    static const char* names[] = {"analyze", "jump_tables", "data_regions", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
+    static const char* names[] = {"analyze", "jump_tables", "data_regions", "references", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
                                   "ann_comment", "ann_remove", "ann_title", "ann_list", "ann_save", "ann_load"};
     for (const char* n : names)
         if (cmd == n) return true;
@@ -95,6 +95,72 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         if (!s.analysis_) throw SessionError("no analysis yet: use 'analyze' first");
         return *s.analysis_;
     };
+
+    if (cmd == "references") {
+        // what a routine refers to: the targets of its absolute and PC-relative operands, with name, type and a look at the contents
+        const Analysis& an = needAnalysis();
+        const Address from = address("from"), to = address("to");
+        std::map<Address, std::vector<Address>> targets;
+        for (const auto& [at, in] : an.code()) {
+            if (at < from || at >= to || !in.reference) continue;
+            const Address t = *in.reference;
+            if (an.isCode(t) && t >= from && t < to) continue;   // a label inside the routine: the listing shows it
+            targets[t].push_back(at);
+        }
+        const Memory& view = *s.analysisView_;
+        auto printable = [](Byte b) { return b >= 0x20 && b < 0x7F; };
+        Json arr = Json::array();
+        for (const auto& [t, users] : targets) {
+            Json e = Json::object();
+            std::string kind = "unknown", name, preview;
+            unsigned length = 0;
+            const DataRegion* region = ann.dataCovering(t);
+            if (t == 4 && s.amiga_) {
+                kind = "system";
+                name = "ExecBase_pointer";   // absolute address 4 holds the pointer to ExecBase
+                preview = "the pointer to exec.library's base, set up by the system";
+            } else if (an.isCode(t)) {
+                kind = "code";
+                name = ann.nameAt(t) ? *ann.nameAt(t) : "sub_" + hexDigits(t, 6);
+            } else if (region) {
+                kind = region->kind == DataKind::Text ? "text" : region->kind == DataKind::Words ? "words" : region->kind == DataKind::Longs ? "longs"
+                       : region->kind == DataKind::Pointers ? "pointers" : "bytes";
+                length = region->length;
+                name = ann.nameAt(region->address) ? *ann.nameAt(region->address) : "data_" + hexDigits(region->address, 6);
+                const Address end = region->address + region->length;
+                if (region->kind == DataKind::Text) {
+                    for (Address p = t; p < end && preview.size() < 60; ++p) {
+                        const Byte b = view.read8(p);
+                        if (b == 0) break;
+                        preview += b == 10 ? std::string("\\n") : b == 9 ? std::string("\\t") : printable(b) ? std::string(1, static_cast<char>(b)) : "\\x" + hexDigits(b, 2);
+                    }
+                } else if (region->kind == DataKind::Words || region->kind == DataKind::Longs || region->kind == DataKind::Pointers) {
+                    const unsigned step = region->kind == DataKind::Words ? 2 : 4;
+                    for (Address p = t & ~(step - 1U); p + step <= end && preview.size() < 70; p += step)
+                        preview += (preview.empty() ? "" : " ") + hexDigits(step == 2 ? view.read16(p) : view.read32(p), static_cast<int>(step) * 2);
+                } else {
+                    for (Address p = t; p < end && p < t + 16; ++p) preview += (preview.empty() ? "" : " ") + hexDigits(view.read8(p), 2);
+                }
+            } else {
+                if (const auto n = ann.expressionFor(t)) {
+                    kind = "variable";
+                    name = *n;
+                } else {
+                    name = "data_" + hexDigits(t, 6);
+                }
+                for (Address p = t; p < t + 8 && p <= kAddressMask; ++p) preview += (preview.empty() ? "" : " ") + hexDigits(view.read8(p), 2);
+            }
+            e.set("addr", hexAddrS(t)).set("name", name).set("kind", kind).set("length", length);
+            if (!preview.empty()) e.set("preview", preview);
+            Json usedAt = Json::array();
+            for (std::size_t i = 0; i < users.size() && i < 4; ++i) usedAt.push(hexAddrS(users[i]));
+            e.set("used_at", usedAt);
+            arr.push(e);
+        }
+        Json j = Json::object();
+        j.set("references", arr);
+        return j;
+    }
 
     if (cmd == "data_regions") {
         const Analysis& an = needAnalysis();
@@ -172,6 +238,7 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
             Json e = Json::object();
             e.set("addr", hexAddrS(r.entry)).set("name", nameOf(r.entry)).set("documented", documented);
             e.set("confidence", doc ? doc->confidence : std::string());
+            if (doc) e.set("summary", doc->summary).set("inputs", doc->inputs).set("outputs", doc->outputs).set("clobbers", doc->clobbers);
             e.set("start", hexAddrS(r.start)).set("end", hexAddrS(r.end));
             e.set("instructions", r.instructions).set("bytes", r.bytes).set("depth", r.depth);
             Json callers = Json::array();
@@ -210,6 +277,8 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         lo.verify = flag("verify", true);
         if (const Json* m = arg("max_chars")) lo.maxChars = static_cast<std::size_t>(number(*m));
         if (s.amiga_) lo.platformSymbol = [](Address a) { return Amiga500::customRegisterName(a); };
+        lo.equates = flag("equates", true);
+        for (const HunkInfo& h : s.hunks_) lo.segments.push_back({h.address, h.address + h.size, h.type});
         if (lo.from < an.from() || lo.to > an.to()) throw SessionError("the range is outside of the analysed range " + hexAddrS(an.from()) + "-" + hexAddrS(an.to()));
         const ListingResult r = renderListing(*s.analysisView_, an, ann, lo);
         Json j = Json::object();

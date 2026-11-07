@@ -5,6 +5,8 @@
 #include "m68k/analysis.hpp"
 #include "m68k/annotations.hpp"
 #include "m68k/assembler.hpp"
+#include "m68k/hunk.hpp"
+#include "m68k/image_io.hpp"
 #include "m68k/listing.hpp"
 #include "m68k/session.hpp"
 #include "test_util.hpp"
@@ -50,6 +52,10 @@ const DataGuess* at(const std::vector<DataGuess>& g, Address a) {
 Json call(Session& s, const std::string& line) { return Json::parse(s.handleLine(line)); }
 bool ok(const Json& j) { return j.find("ok") && j.find("ok")->asBool(); }
 bool has(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
+std::string str(const Json& j, const char* k) {
+    const Json* v = j.find(k);
+    return v && v->isString() ? v->asString() : "<missing>";
+}
 
 std::string escape(const std::string& t) {
     std::string out;
@@ -365,6 +371,63 @@ int main() {
         const std::string text = lst.find("listing")->asString();
         CHECK(has(text, "DC.B     \"Line one\",10,\"Line two\",13,10,0"));
         CHECK(has(text, "DC.B     $61,9,\"b c d\",0"));      // a single character is written as a number
+    }
+
+    // ---- what the prompt of a routine and the final listing need (found in the first blind run with a model's job done by an agent) -------------------------
+    {
+        const AssemblyResult r = assemble(
+            "        SECTION code,CODE\nstart:  LEA msg(PC),A0\n        MOVE.L D0,var\n        LEA buf,A1\n        MOVE.L #1,D1\n        RTS\nmsg:    DC.B \"Hello\",10,0\n        EVEN\n"
+            "        SECTION bss,BSS\nvar:    DS.L 1\nbuf:    DS.B 32\n");
+        CHECK(r.ok());
+        writeBinaryFile("m68k_ref_test.tmp", writeHunkFile(r.sections));
+        SessionOptions opt;
+        opt.allowFiles = true;
+        Session s(opt);
+        CHECK(ok(call(s, "{\"cmd\":\"machine\",\"type\":\"amiga500\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"load_file\",\"file\":\"m68k_ref_test.tmp\",\"type\":\"hunk\"}")));
+        std::remove("m68k_ref_test.tmp");
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"0x20000\"]}")));
+        CHECK(ok(call(s, "{\"cmd\":\"data_regions\",\"apply\":true}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"0x20000\"]}")));
+        CHECK(ok(call(s, "{\"cmd\":\"ann_variable\",\"addr\":\"0x20020\",\"name\":\"counter\",\"size\":4,\"comment\":\"how often it ran\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"ann_variable\",\"addr\":\"0x20024\",\"name\":\"line_buffer\",\"size\":32,\"comment\":\"one line of output\"}")));
+
+        // references: what the operands of the routine point at, with a look at the contents
+        const Json refs = call(s, "{\"cmd\":\"references\",\"from\":\"0x20000\",\"to\":\"0x20018\"}");
+        CHECK(ok(refs));
+        const std::vector<Json>& list = refs.find("references")->items();
+        CHECK_EQ(list.size(), std::size_t{3});                       // the string and the two variables
+        CHECK_EQ(str(list[0], "kind"), std::string("text"));
+        CHECK_EQ(str(list[0], "preview"), std::string("Hello\\n"));
+        CHECK_EQ(list[0].find("length")->asInt(), std::int64_t{8});
+        CHECK_EQ(str(list[1], "kind"), std::string("longs"));        // var: always accessed as a longword
+        CHECK_EQ(str(list[1], "name"), std::string("counter"));      // the name the variable annotation gave the longword
+        CHECK_EQ(list[0].find("used_at")->items()[0].asString(), std::string("0x020000"));
+
+        // the listing: hunk boundaries, the comment of a variable inside an automatically recognised region, a zero buffer as DS.B
+        const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
+        CHECK(lst.find("verified")->asBool());
+        const std::string text = lst.find("listing")->asString();
+        CHECK(has(text, "; ---- CODE hunk 0 ($020000-$02001F) ----"));
+        CHECK(has(text, "; ---- BSS hunk 1 ($020020-$020043) ----"));
+        CHECK(has(text, "; how often it ran"));                      // the comment survives although a region begins at the same address
+        CHECK(has(text, "DS.B     32"));                             // a named buffer of zeros is one DS.B line, not 32 bytes
+        CHECK(has(text, "; one line of output"));
+        // an excerpt for reading has no EQU prelude
+        const Json excerpt = call(s, "{\"cmd\":\"listing\",\"verify\":false,\"equates\":false,\"from\":\"0x20000\",\"to\":\"0x20018\"}");
+        CHECK(!has(excerpt.find("listing")->asString(), " EQU "));
+        CHECK(has(call(s, "{\"cmd\":\"listing\",\"verify\":false,\"from\":\"0x20000\",\"to\":\"0x20018\"}").find("listing")->asString(), " EQU "));
+        // routines: the documentation is part of the answer
+        CHECK(ok(call(s, "{\"cmd\":\"ann_routine\",\"addr\":\"0x20000\",\"name\":\"setup_it\",\"summary\":\"does it\",\"inputs\":\"D0\",\"outputs\":\"none\",\"clobbers\":\"D1 A0 A1\",\"confidence\":\"high\"}")));
+        const Json routinesReply = call(s, "{\"cmd\":\"routines\"}");
+        const Json& routine = routinesReply.find("routines")->items()[0];
+        CHECK_EQ(str(routine, "inputs"), std::string("D0"));
+        CHECK_EQ(str(routine, "clobbers"), std::string("D1 A0 A1"));
+        CHECK_EQ(str(routine, "summary"), std::string("does it"));
+        // a new load forgets the hunks
+        CHECK(ok(call(s, "{\"cmd\":\"asm\",\"source\":\"        ORG $1000\\nstart: RTS\\n\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        CHECK(!has(call(s, "{\"cmd\":\"listing\"}").find("listing")->asString(), "hunk"));
     }
 
     // ---- random strings: the listing always verifies, the strings are found -----------------------------------------------------------------------------------

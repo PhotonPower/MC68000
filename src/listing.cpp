@@ -214,9 +214,19 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         return "        DC.B     " + items;
     };
 
+    auto inBss = [&](Address x) {
+        for (const ListingSegment& seg : opt.segments)
+            if (seg.kind == "BSS" && x >= seg.start && x < seg.end) return true;
+        return false;
+    };
+    auto zeroMinimum = [&](Address x) -> Address { return inBss(x) ? 4 : 16; };
+
     Address a = from;
     bool cut = false;
     while (a < to) {
+        for (std::size_t si = 0; si < opt.segments.size(); ++si)
+            if (opt.segments[si].start == a)
+                emitComment("---- " + opt.segments[si].kind + " hunk " + std::to_string(si) + " (" + hexv(a, 6) + "-" + hexv(opt.segments[si].end - 1, 6) + ") ----");
         if (opt.maxChars && static_cast<std::size_t>(body.tellp()) > opt.maxChars) {
             cut = true;
             break;
@@ -226,6 +236,8 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         if (const DataRegion* r = ann.dataAt(a)) {
             const Address end = std::min<Address>(a + r->length, to);
             if (!r->comment.empty()) emitComment(r->comment);
+            // a variable that was named at the start of an automatically recognised region: its comment must not get lost
+            if (const VariableDoc* v = ann.variableAt(a); v && !v->comment.empty() && v->comment != r->comment) emitComment(v->comment);
             Address p = a;
             while (p < end) {
                 switch (r->kind) {
@@ -295,8 +307,12 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             else if (size == 4 && !(a & 1U)) line = "        DC.L     " + hexv(view.read32(a), 8);
             else if (size == 1) line = "        DC.B     " + hexv(view.read8(a), 2);
             else line = "";
+            bool allZero = size >= 8;
+            for (Address p = a; allZero && p < end; ++p) allZero = view.read8(p) == 0;
             if (!line.empty()) {
                 body << withComment(line, v->comment) << "\n";
+            } else if (allZero) {   // a buffer of zeros (a BSS variable)
+                body << withComment("        DS.B     " + std::to_string(size), v->comment) << "\n";
             } else {
                 if (!v->comment.empty()) emitComment(v->comment);
                 for (Address p = a; p < end; p += 8) body << dcBytes(p, std::min<std::size_t>(8, end - p)) << "\n";
@@ -349,10 +365,11 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         // bytes that are neither code nor annotated data: text, zero runs, or plain bytes
         Address end = a + 1;
         while (end < to && !isBoundary(end) && end - a < 8) ++end;
-        // a run of 16 or more zero bytes becomes DS.B: end this line where such a run starts
+        // a run of zero bytes (16 or more; 4 or more in a BSS hunk) becomes DS.B: end this line where such a run starts
         for (Address i = a + 1; i < end; ++i) {
-            bool run = i + 16 <= to;
-            for (Address k = i; run && k < i + 16; ++k) run = view.read8(k) == 0 && (k == i || !isBoundary(k)) && !analysis.at(k);
+            const Address need = zeroMinimum(i);
+            bool run = i + need <= to;
+            for (Address k = i; run && k < i + need; ++k) run = view.read8(k) == 0 && (k == i || !isBoundary(k)) && !analysis.at(k);
             if (run) {
                 end = i;
                 break;
@@ -380,7 +397,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         while (a + zeros < to && view.read8(a + static_cast<Address>(zeros)) == 0 && (zeros == 0 || !isBoundary(a + static_cast<Address>(zeros))) &&
                !analysis.at(a + static_cast<Address>(zeros)))
             ++zeros;
-        if (zeros >= 16) {
+        if (zeros >= zeroMinimum(a)) {
             body << "        DS.B     " << zeros << "\n";
             a += static_cast<Address>(zeros);
             continue;
@@ -404,6 +421,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
     {
         std::ostringstream s;
         for (const auto& [addr, n] : equ) {
+            if (!opt.equates && !opt.verify) break;                         // an excerpt for reading: the names stand for themselves
             if (emittedLabels.count(addr) && names[addr] == n) continue;  // defined by a line label
             s << n << " EQU " << hexv(addr, 6) << "\n";
         }

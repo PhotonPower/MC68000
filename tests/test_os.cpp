@@ -86,6 +86,10 @@ int main() {
         CHECK_EQ(calls.size(), std::size_t{5});
         CHECK_EQ(str(calls[0], "function"), std::string("OpenLibrary"));
         CHECK_EQ(str(calls[0], "note"), std::string("dos.library"));
+        // the call site is the JSR instruction, the caller its return address (the instruction behind it)
+        CHECK_EQ(str(calls[0], "call_site"), std::string("0x02000A"));
+        CHECK_EQ(str(calls[0], "caller"), std::string("0x02000E"));
+        CHECK_EQ(str(calls[1], "call_site"), std::string("0x020014"));              // JSR -60(A6) (Output): MOVE.L, BEQ.S and MOVEA.L (2 bytes each) lie between the two calls
         CHECK_EQ(calls[0].find("offset")->asInt(), std::int64_t{-552});
         CHECK(calls[0].find("emulated")->asBool());
         CHECK_EQ(str(calls[1], "function"), std::string("Output"));

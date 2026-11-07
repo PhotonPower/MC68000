@@ -196,6 +196,72 @@ class ExampleProgramTest(unittest.TestCase):
         self.assertIn("HUNK_UNIT", r3.stderr)
         self.assertIn("vlink", r3.stderr)
 
+    def test_run_routine_report_details(self):
+        """Findings of the first blind run: the Write arguments D2/D3 are shown, the call site is the JSR (not the return address), text shows as text."""
+        s, tools = self._server_with_example()
+        try:
+            text = tools.t_run_routine("0x02004A", registers={"A0": "0x030000"}, setup=[{"addr": "0x020000"}],
+                                       memory=[{"addr": "0x030000", "hex": "48692074686572650A00"}])
+        finally:
+            s.close()
+        self.assertIn("D2=00030000 D3=00000009", text)                          # the buffer and the length of Write
+        self.assertIn("(the call instruction is at 0x020066)", text)            # the JSR -48(A6) of `print`, not the instruction behind it ($02006A)
+        self.assertNotIn("called from", text)
+
+    def test_ascii_of_and_the_notes_about_writes(self):
+        self.assertEqual(annotate.ascii_of("48692074686572650A"), ' "Hi there\\n"')
+        self.assertEqual(annotate.ascii_of("000102030405"), "")                 # not text: no column
+        self.assertEqual(annotate.ascii_of("zz"), "")
+
+        class Fake:                                                              # a server that only knows the routines
+            def ok(self, **req):
+                assert req["cmd"] == "routines"
+                return {"routines": [{"name": "sub_020000", "start": "0x020000", "end": "0x020040"}, {"name": "sub_020040", "start": "0x020040", "end": "0x020080"}]}
+
+        tools = annotate.Tools(Fake())
+        tools.program = (0x020000, 0x020100)
+        notes = tools.write_notes([{"addr": "0x0200FE", "len": 4}, {"addr": "0x020044", "len": 2}, {"addr": "0x020090", "len": 2}])
+        self.assertEqual(len(notes), 2)
+        self.assertIn("beyond the end of the loaded program (0x0200FF)", notes[0])   # the last two bytes of the write are outside
+        self.assertIn("inside the code of sub_020040", notes[1])                     # a write into code
+        self.assertEqual(tools.write_notes([]), [])
+        self.assertEqual(tools.write_notes([{"addr": "0x020090", "len": 2}]), [])  # data between the routines is fine
+
+    def test_mark_data_text_needs_no_length_and_the_checks_look_at_pc_relative_operands(self):
+        s, tools = self._server_with_example()
+        try:
+            self.assertEqual(tools.dispatch("mark_data", {"addr": "0x0200F4", "kind": "text", "name": "banner"}), "ok: data region marked")
+            refs = {r["addr"]: r for r in s.ok(cmd="references", **{"from": "0x020000", "to": "0x020048"})["references"]}
+            self.assertEqual(refs["0x0200F4"]["name"], "banner")
+            self.assertEqual(refs["0x0200F4"]["length"], 32)                       # 30 characters, the newline and the NUL
+            self.assertTrue(tools.dispatch("mark_data", {"addr": "0x020124", "kind": "words"}).startswith("error: length is required"))
+            self.assertIn("contains code", tools.dispatch("mark_data", {"addr": "0x020000", "kind": "text"}))        # the first NUL is inside the code: refused
+            # `start` uses strings and variables by their addresses: not finished while they have no names, PC-relative ones included
+            start = next(r for r in s.ok(cmd="routines")["routines"] if r["addr"] == "0x020000")
+            problems = tools.completeness_problems((start["start"], start["end"]))
+            joined = " | ".join(problems)
+            self.assertIn("$0200E8", joined)                                         # `LEA $0200E8(PC),A1`: addressed relative to the PC
+            self.assertIn("$020130", joined)                                         # `MOVE.L D0,$00020130.L`
+        finally:
+            s.close()
+
+    def test_documentation_must_have_inputs_outputs_clobbers_and_confidence(self):
+        s, tools = self._server_with_example()
+        try:
+            r = next(x for x in s.ok(cmd="routines")["routines"] if x["addr"] == "0x02004A")
+            tools.current, tools.range = r["addr"], (r["start"], r["end"])
+            self.assertEqual(tools.documentation_problems(), [])                       # not documented yet: another message comes first
+            tools.dispatch("document_routine", {"addr": "0x02004A", "name": "print_string", "summary": "x"})
+            problems = tools.documentation_problems()
+            self.assertEqual(len(problems), 2)
+            self.assertIn("without inputs, outputs, clobbers", problems[0])
+            self.assertIn("without `confidence`", problems[1])
+            tools.dispatch("document_routine", {"addr": "0x02004A", "name": "print_string", "summary": "x", "inputs": "A0", "outputs": "none",
+                                                "clobbers": "none", "confidence": "high"})
+            self.assertEqual(tools.documentation_problems(), [])
+        finally:
+            s.close()
+
     def test_dry_run_of_the_orchestrator_contacts_no_model(self):
         mock = MockOllama({})
         url = mock.start()

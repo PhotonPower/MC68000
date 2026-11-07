@@ -62,9 +62,22 @@ speichern → am Ende das verifizierte Listing. Eine zweite Ausführung mit dems
 offenen Routinen.
 
 **Vollständigkeitsprüfung:** Beim ersten `finish_routine` prüft der Orchestrator die Routine: noch unbenannte Platzhalter (`loc_…`,
-`sub_…`, `data_…`), ohne Namen benutzte absolute Speicherstellen (`$2200.W`; Hardware-Register zählen nicht) und zu wenige Kommentare
-(etwa einer je 10 Befehle) werden dem Modell aufgelistet. Ein zweiter Aufruf gilt immer als endgültig, das Modell kann also nie
-festhängen.
+`sub_…`, `data_…`), ohne Namen benutzte Speicherstellen – absolut (`$2200.W`) **und PC-relativ** (`$02021A(PC)`: Strings, Tabellen); Hardware-Register zählen nicht –,
+eine Dokumentation **ohne `inputs`, `outputs`, `clobbers` oder `confidence`** („none“ ist erlaubt, leer nicht) und zu wenige Kommentare
+(etwa einer je 10 Befehle) werden dem Modell aufgelistet. Im Orchestrator gilt ein zweiter Aufruf immer als endgültig, das Modell kann also nie
+festhängen. `agent/m68k_drive.py finish` ist dagegen **streng** (die Routine wird nur angenommen, wenn nichts fehlt); `--accept-gaps` stellt die Regel des Orchestrators her.
+
+**Was ein Modell zu einer Routine bekommt:** das Listing des Bereichs (ohne EQU-Vorspann; mit den Adressen der Zeilen) und darunter **„Referenced from this routine“**:
+alles, worauf die Operanden zeigen und was im Ausschnitt nur als Adresse steht – Strings mit ihrem Inhalt, Tabellen und Variablen mit den ersten Werten, andere Routinen, der Zeiger auf ExecBase
+(Adresse 4). Der Befehl dahinter ist `references` ([agent-protocol.md](agent-protocol.md)).
+
+**Berichte von `run_routine`:** außer Registern und Speicher (Hex **und**, wenn es nach Text aussieht, als ASCII) die Bibliotheksaufrufe mit D0–D3/A0/A1 und der Adresse des `JSR`
+selbst (dort gehört ein Kommentar hin), und **Hinweise**: ob die Routine wirklich zurückkehrte, Befehle aus leerem Speicher, Schreiben **hinter das Ende des geladenen Programms** (Pufferüberlauf am letzten Hunk)
+oder **in den Code einer Routine**. `setup` lässt die genannten Routinen **vollständig** laufen, auch ein `CloseLibrary` am Ende; die Bibliotheksbasis bleibt für den Test benutzbar
+(der Emulator nimmt das hin).
+
+**Bekannte Grenze der Datentyp-Erkennung:** Eine Tabelle, die nur als Zeiger **an eine andere Routine** übergeben und dort mit `(A0)+` gelesen wird, erkennt die Analyse nicht
+(der Hinweis steht im Aufgerufenen, die Adresse wird im Aufrufer geladen); `mark_data kind=words` (oder `longs`) holt das nach.
 
 ### Mehrere Durchgänge
 
