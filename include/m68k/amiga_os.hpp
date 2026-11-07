@@ -30,8 +30,8 @@ struct LibCall {
 /// `JSR -552(A6)` exactly as they would on an Amiga.
 ///
 /// **Only a handful of functions are emulated** (docs/amiga500.md has the list): exec memory (AllocMem, FreeMem,
-/// AllocVec, FreeVec), OpenLibrary/CloseLibrary, FindTask, Forbid/Permit/Disable/Enable; dos Output/Input/Write/Read/
-/// Close/Open/Lock/IoErr/Delay/Exit. Every other call - known by name or not - is **logged** (library, offset, name,
+/// AllocVec, FreeVec, AvailMem, CopyMem), lists (AddHead, AddTail, Insert, Remove, RemHead, RemTail, Enqueue, FindName),
+/// OpenLibrary/CloseLibrary, FindTask, Forbid/Permit/Disable/Enable; dos Output/Input/Write/Read/Close/Open/Lock/IoErr/Delay/Exit. Every other call - known by name or not - is **logged** (library, offset, name,
 /// registers) and returns D0 = 0. Nothing blocks, nothing is scheduled, there are no files, no windows, no graphics.
 /// The function names and offsets come from the Amiga include files as remembered; check them before relying on them.
 ///

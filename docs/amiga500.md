@@ -44,6 +44,10 @@ Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ans
   |---|---|---|
   | exec | `AllocMem` (−198), `FreeMem` (−210) | First-Fit im Heap, auf 8 Byte gerundet, `MEMF_CLEAR` (`$10000`) füllt mit 0; Größe 0 oder zu groß → 0; `FreeMem` eines unbekannten Blocks wird protokolliert |
   | exec | `AllocVec` (−684), `FreeVec` (−690) | wie oben, Größe steht 8 Byte vor dem Zeiger |
+  | exec | `AvailMem` (−216) | freie Bytes im Heap (`MEMF_LARGEST` = `$20000`: größter freier Block); die Flags für Chip/Fast spielen keine Rolle (es gibt einen Heap) |
+  | exec | `CopyMem` (−624), `CopyMemQuick` (−630) | `A0` Quelle, `A1` Ziel, `D0` Länge; überlappende Blöcke werden richtig kopiert |
+  | exec | `AddHead` (−240), `AddTail` (−246), `Insert` (−234), `Remove` (−252), `RemHead` (−258), `RemTail` (−264) | echte `List`/`Node`-Strukturen im Speicher (`lh_Head` 0, `lh_Tail` 4, `lh_TailPred` 8; `ln_Succ` 0, `ln_Pred` 4); `RemHead`/`RemTail` liefern bei leerer Liste 0; `Insert` mit `A2` = 0 fügt am Anfang ein |
+  | exec | `Enqueue` (−270), `FindName` (−276) | `Enqueue` sortiert nach `ln_Pri` (vorzeichenbehaftet): hinter den Knoten gleicher Priorität, vor dem ersten niedrigerer; `FindName` vergleicht `ln_Name` mit Groß-/Kleinschreibung, beginnt hinter `A0` (Liste oder Knoten) |
   | exec | `OpenLibrary` (−552), `OldOpenLibrary` (−408), `CloseLibrary` (−414) | jede Bibliothek wird geöffnet (leere Sprungtabelle); gleicher Name → gleiche Basis; die Version wird ignoriert |
   | exec | `FindTask` (−294) | liefert den Prozess-Knoten (`ln_Type` = 13), auch für einen Namen |
   | exec | `Forbid`, `Permit`, `Disable`, `Enable` | tun nichts |
@@ -62,7 +66,7 @@ Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ans
 - **Zustand:** Belegungen, geöffnete Bibliotheken, Konsole und `IoErr` gehören zu den Checkpoints (Rollback stellt sie wieder her).
 - **Ohne Gewähr:** Funktionsnamen und Offsets stammen aus den Amiga-Include-Dateien (`exec_lib.fd`, `dos_lib.fd`) **aus dem Gedächtnis**;
   bitte vor dem Verlassen darauf gegen das NDK prüfen. Die Registerbelegungen (z. B. `AllocMem`: D0 = Größe, D1 = Anforderungen; `Write`: D1 =
-  Datei, D2 = Puffer, D3 = Länge) ebenso.
+  Datei, D2 = Puffer, D3 = Länge; `AddHead`: A0 = Liste, A1 = Knoten) ebenso.
 
 ## Dateiformate
 

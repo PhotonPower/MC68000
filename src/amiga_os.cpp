@@ -20,7 +20,9 @@ struct Func {
 
 // exec.library vectors (name known; only some are emulated)
 const Func kExec[] = {
-    {-120, "Disable"}, {-126, "Enable"}, {-132, "Forbid"}, {-138, "Permit"}, {-198, "AllocMem"}, {-210, "FreeMem"},
+    {-120, "Disable"}, {-126, "Enable"}, {-132, "Forbid"}, {-138, "Permit"}, {-198, "AllocMem"}, {-210, "FreeMem"}, {-216, "AvailMem"},
+    {-234, "Insert"}, {-240, "AddHead"}, {-246, "AddTail"}, {-252, "Remove"}, {-258, "RemHead"}, {-264, "RemTail"}, {-270, "Enqueue"},
+    {-276, "FindName"}, {-624, "CopyMem"}, {-630, "CopyMemQuick"},
     {-294, "FindTask"}, {-318, "Wait"}, {-324, "Signal"}, {-354, "AddPort"}, {-360, "RemPort"}, {-366, "PutMsg"},
     {-372, "GetMsg"}, {-378, "ReplyMsg"}, {-384, "WaitPort"}, {-408, "OldOpenLibrary"}, {-414, "CloseLibrary"},
     {-444, "OpenDevice"}, {-450, "CloseDevice"}, {-456, "DoIO"}, {-462, "SendIO"}, {-552, "OpenLibrary"},
@@ -240,6 +242,101 @@ void AmigaOs::dispatch(Cpu& cpu, LibCall& c, const std::string& lib) {
             return done(rd32(execBase() + 0x114));
         }
         if (f == "Forbid" || f == "Permit" || f == "Disable" || f == "Enable") return done(r.d[0]);
+        if (f == "AvailMem") {
+            // free bytes of the heap (MEMF_LARGEST, $20000: the largest free block); the flags for chip/fast do not matter, there is only one heap
+            std::vector<std::pair<Address, Address>> blocks = state_.blocks;
+            std::sort(blocks.begin(), blocks.end());
+            Address at = heapBase_, total = 0, largest = 0;
+            for (const auto& [a, n] : blocks) {
+                if (a > at) total += a - at, largest = std::max(largest, a - at);
+                at = std::max(at, static_cast<Address>(a + ((n + 7U) & ~7U)));
+            }
+            if (heapEnd_ > at) total += heapEnd_ - at, largest = std::max(largest, heapEnd_ - at);
+            return done((r.d[1] & 0x20000U) ? largest : total);
+        }
+        if (f == "CopyMem" || f == "CopyMemQuick") {   // A0 source, A1 destination, D0 size in bytes; overlapping blocks are copied correctly
+            const Long n = std::min<Long>(r.d[0], 0x1000000);
+            std::vector<Byte> tmp;
+            tmp.reserve(n);
+            for (Long i = 0; i < n; ++i) tmp.push_back(amiga_.readByte(r.a[0] + i));
+            for (Long i = 0; i < n; ++i) amiga_.writeByte(r.a[1] + i, tmp[i]);
+            return done(r.d[0]);
+        }
+        // exec lists: struct List { lh_Head 0, lh_Tail 4, lh_TailPred 8, lh_Type 12 }, struct Node { ln_Succ 0, ln_Pred 4, ln_Type 8, ln_Pri 9, ln_Name 10 }
+        if (f == "AddHead" || f == "AddTail") {
+            const Address list = r.a[0], node = r.a[1];
+            if (f == "AddHead") {
+                const Address first = rd32(list);
+                wr32(node, first);
+                wr32(node + 4, list);
+                wr32(first + 4, node);
+                wr32(list, node);
+            } else {
+                const Address last = rd32(list + 8);
+                wr32(node, list + 4);
+                wr32(node + 4, last);
+                wr32(last, node);
+                wr32(list + 8, node);
+            }
+            return done(r.d[0]);
+        }
+        if (f == "Remove") {
+            const Address node = r.a[1], next = rd32(node), prev = rd32(node + 4);
+            wr32(prev, next);
+            wr32(next + 4, prev);
+            return done(node);
+        }
+        if (f == "RemHead" || f == "RemTail") {
+            const Address list = r.a[0];
+            const Address node = f == "RemHead" ? rd32(list) : rd32(list + 8);
+            if (rd32(node) == 0 || node == list + 4 || node == list) {   // the list is empty: the first node is the tail marker
+                c.note = "empty list";
+                return done(0);
+            }
+            const Address next = rd32(node), prev = rd32(node + 4);
+            wr32(prev, next);
+            wr32(next + 4, prev);
+            return done(node);
+        }
+        if (f == "Insert") {   // A0 list, A1 node, A2 the node to insert behind (0: at the head)
+            const Address list = r.a[0], node = r.a[1], pred = r.a[2] ? r.a[2] : list;
+            const Address next = rd32(pred);
+            wr32(node, next);
+            wr32(node + 4, pred);
+            wr32(next + 4, node);
+            wr32(pred, node);
+            return done(r.d[0]);
+        }
+        if (f == "Enqueue") {   // by priority (signed ln_Pri): behind the nodes of the same priority, before the first node of a lower one
+            const Address list = r.a[0], node = r.a[1];
+            const std::int8_t pri = static_cast<std::int8_t>(amiga_.readByte(node + 9));
+            Address pred = list, cur = rd32(list);
+            for (unsigned guard = 0; guard < 100000 && rd32(cur) != 0; ++guard) {
+                if (static_cast<std::int8_t>(amiga_.readByte(cur + 9)) < pri) break;
+                pred = cur;
+                cur = rd32(cur);
+            }
+            const Address next = rd32(pred);
+            wr32(node, next);
+            wr32(node + 4, pred);
+            wr32(next + 4, node);
+            wr32(pred, node);
+            return done(r.d[0]);
+        }
+        if (f == "FindName") {   // A0 list (or a node: the search starts behind it), A1 name; case sensitive
+            const std::string wanted = readString(r.a[1], 200);
+            Address cur = rd32(r.a[0]);
+            for (unsigned guard = 0; guard < 100000 && rd32(cur) != 0; ++guard) {
+                const Address name = rd32(cur + 10);
+                if (name && readString(name, 200) == wanted) {
+                    c.note = wanted;
+                    return done(cur);
+                }
+                cur = rd32(cur);
+            }
+            c.note = wanted + " (not found)";
+            return done(0);
+        }
     } else if (lib == "dos.library") {
         if (f == "Output") return done(kFileOutput);
         if (f == "Input") return done(kFileInput);

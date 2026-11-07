@@ -7,6 +7,8 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **OS-Emulation erweitert:** exec-Listenfunktionen (`AddHead`, `AddTail`, `Insert`, `Remove`, `RemHead`, `RemTail`, `Enqueue`, `FindName`) auf echten `List`/`Node`-Strukturen, `CopyMem`/`CopyMemQuick` (überlappend
+  korrekt) und `AvailMem`. Test `os` jetzt mit 100 Prüfungen (Listenfolge vor- und rückwärts nachgeprüft). Funktionsnamen und Offsets wieder aus dem Gedächtnis: gegen das NDK prüfen.
 - **Datentyp-Erkennung** (`Analysis::guessData`, Befehl `data_regions`): Strings (referenziert, NUL-terminiert oder lang), Tabellen von String-Zeigern (auch mit kurzen Strings) und Nullbereiche; `apply:true`
   trägt Text und Zeigertabellen als Datenbereiche ein. Das Listing schreibt Strings als `DC.B "…",0` (mit `EVEN` für das Füllbyte). Der Orchestrator übernimmt die Vorschläge selbst (`--no-auto-data`).
   Test `datatypes` (3101 Prüfungen, darunter 300 Zufallsprogramme und 400 Zufallsbilder), Orchestrator-Tests.

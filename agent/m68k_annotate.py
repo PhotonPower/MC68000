@@ -584,7 +584,8 @@ MC68000 / Amiga facts that are easy to get wrong:
 - Instructions and 16/32 bit data must be at EVEN addresses; an odd address raises an address error (vector 3).
 - Amiga system calls are JSR -offset(A6): A6 holds the base of a library; the negative offset selects the function (a multiple of 6).
   The base of exec.library is read from the absolute address 4 (MOVEA.L 4.W,A6). The emulator really emulates a few exec functions
-  (AllocMem, FreeMem, AllocVec, FreeVec, OpenLibrary, CloseLibrary, FindTask) and dos Output/Write/Read/Close/Open/IoErr/Delay/Exit;
+  (AllocMem, FreeMem, AllocVec, FreeVec, AvailMem, CopyMem, the list functions AddHead/AddTail/Insert/Remove/RemHead/RemTail/Enqueue/FindName,
+  OpenLibrary, CloseLibrary, FindTask) and dos Output/Write/Read/Close/Open/IoErr/Delay/Exit;
   every other library call is only LOGGED by run_routine and returns D0 = 0 ("NOT emulated"), so do not read meaning into that 0.
   Examples in exec.library: -552 OpenLibrary (A1 = name
   string such as "dos.library", D0 = version), -414 CloseLibrary, -198 AllocMem, -210 FreeMem. Say which library an A6 value belongs to

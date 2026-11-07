@@ -39,7 +39,7 @@ Erledigt ([emulator.md](emulator.md), [agent-protocol.md](agent-protocol.md), [a
   alles andere wird protokolliert (`libcalls`) und liefert 0
 
 Offen (Ideen):
-- weitere `exec`-/`dos`-Funktionen (Listen, Nachrichten/Ports, `Open` auf eine Dateiabbildung, `Printf`-Familie) – nur, wo die Semantik sicher bekannt ist
+- weitere `exec`-/`dos`-Funktionen (Nachrichten/Ports, `Open` auf eine Dateiabbildung, `Printf`-Familie) – nur, wo die Semantik sicher bekannt ist; Listen, `CopyMem`, `AvailMem` sind seit 0.5 erledigt
 - Vergleich mit Daten von echter Hardware (öffentliche Einzelbefehls-Testsätze), vor allem für den gestapelten PC und die Statuswort-Bits eines Adressfehlers
 
 ## Meilenstein 0.4 – Monitor (erledigt)

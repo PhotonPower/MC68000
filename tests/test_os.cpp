@@ -208,6 +208,97 @@ int main() {
         CHECK_EQ(str(calls[6], "result"), std::string("0x00000000"));  // exec + 6 = 7 libraries; "lib6" is the 7th name: refused
     }
 
+    // ---- exec lists, CopyMem, AvailMem ------------------------------------------------------------------------------------------------------
+    {
+        Session s;
+        call(s, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        auto be = [](unsigned v) {
+            char b[9];
+            std::snprintf(b, sizeof b, "%08X", v);
+            return std::string(b);
+        };
+        auto write = [&](unsigned addr, const std::string& hex) { call(s, "{\"cmd\":\"write\",\"addr\":" + std::to_string(addr) + ",\"hex\":\"" + hex + "\"}"); };
+        const unsigned list = 0x30000;
+        write(list, be(list + 4) + be(0) + be(list));                       // NewList: lh_Head = &lh_Tail, lh_Tail = 0, lh_TailPred = &lh_Head
+        // nodes n0..n6 at $30100 + 0x20*i; ln_Pri at +9, ln_Name at +10 (a pointer to the strings at $30300 + 16*i)
+        const int pri[7] = {0, 0, 0, 5, -2, 5, 3};
+        const char* names[7] = {"zero", "one", "two", "three", "four", "five", "six"};
+        for (int i = 0; i < 7; ++i) {
+            const unsigned n = 0x30100 + 0x20 * static_cast<unsigned>(i);
+            write(n + 9, std::string(1, "0123456789ABCDEF"[(static_cast<unsigned>(pri[i]) >> 4) & 15]) + "0123456789ABCDEF"[static_cast<unsigned>(pri[i]) & 15]);
+            write(n + 10, be(0x30300 + 16 * static_cast<unsigned>(i)));
+            std::string hex;
+            for (const char* c = names[i]; *c; ++c) hex += be(static_cast<unsigned char>(*c)).substr(6);
+            write(0x30300 + 16 * static_cast<unsigned>(i), hex + "00");
+        }
+        auto node = [](int i) { return 0x30100 + 0x20 * i; };
+        // the program: every call loads its registers from absolute values
+        std::string prog = "        ORG $20000\nstart:  MOVEA.L 4.W,A6\n";
+        auto callFn = [&](int offset, std::initializer_list<std::pair<const char*, unsigned>> regs, const char* keep = nullptr) {
+            for (const auto& [reg, value] : regs) prog += std::string("        MOVE.L #") + std::to_string(value) + "," + reg + "\n";
+            prog += "        JSR " + std::to_string(offset) + "(A6)\n";
+            if (keep) prog += std::string("        MOVE.L D0,") + keep + "\n";
+        };
+        callFn(-246, {{"A0", list}, {"A1", static_cast<unsigned>(node(1))}});                 // AddTail one
+        callFn(-246, {{"A0", list}, {"A1", static_cast<unsigned>(node(2))}});                 // AddTail two
+        callFn(-240, {{"A0", list}, {"A1", static_cast<unsigned>(node(0))}});                 // AddHead zero        -> zero one two
+        callFn(-258, {{"A0", list}}, "D1");                                                    // RemHead             -> zero; list: one two
+        callFn(-252, {{"A1", static_cast<unsigned>(node(1))}}, "D2");                          // Remove one          -> list: two
+        callFn(-270, {{"A0", list}, {"A1", static_cast<unsigned>(node(3))}});                 // Enqueue three (5)   -> three two
+        callFn(-270, {{"A0", list}, {"A1", static_cast<unsigned>(node(4))}});                 // Enqueue four (-2)   -> three two four
+        callFn(-270, {{"A0", list}, {"A1", static_cast<unsigned>(node(5))}});                 // Enqueue five (5)    -> three five two four
+        callFn(-276, {{"A0", list}, {"A1", 0x30300 + 16 * 2}}, "D3");                          // FindName "two"      -> node two
+        callFn(-276, {{"A0", list}, {"A1", 0x30300 + 16 * 0}}, "D4");                          // FindName "zero"     -> 0 (it was removed)
+        callFn(-264, {{"A0", list}}, "D5");                                                    // RemTail             -> four; list: three five two
+        callFn(-234, {{"A0", list}, {"A1", static_cast<unsigned>(node(6))}, {"A2", static_cast<unsigned>(node(3))}});   // Insert six behind three
+        callFn(-258, {{"A0", 0x30400}}, "D6");                                                 // RemHead of an empty list -> 0
+        prog += "        RTS\n";
+        write(0x30400, be(0x30404) + be(0) + be(0x30400));                                    // an empty list
+        CHECK(ok(load(s, prog)));
+        const Json r = call(s, "{\"cmd\":\"run\"}");
+        CHECK_EQ(str(r, "stop"), std::string("exit"));
+        auto u32 = [&](unsigned addr) {
+            const Json j = call(s, "{\"cmd\":\"read\",\"addr\":" + std::to_string(addr) + ",\"len\":4}");
+            return static_cast<unsigned>(std::stoul(str(j, "hex"), nullptr, 16));
+        };
+        CHECK_EQ(regOf(r, "D1"), "0x" + be(static_cast<unsigned>(node(0))));    // RemHead
+        CHECK_EQ(regOf(r, "D2"), "0x" + be(static_cast<unsigned>(node(1))));    // Remove returns the node
+        CHECK_EQ(regOf(r, "D3"), "0x" + be(static_cast<unsigned>(node(2))));    // FindName "two"
+        CHECK_EQ(regOf(r, "D4"), std::string("0x00000000"));                    // "zero" is not in the list
+        CHECK_EQ(regOf(r, "D5"), "0x" + be(static_cast<unsigned>(node(4))));    // RemTail
+        CHECK_EQ(regOf(r, "D6"), std::string("0x00000000"));                    // RemHead of an empty list
+        // final order: three, six, five, two - walk the list forwards and backwards
+        const int want[4] = {3, 6, 5, 2};
+        unsigned cur = u32(list);
+        for (int i = 0; i < 4; ++i) {
+            CHECK_EQ(cur, static_cast<unsigned>(node(want[i])));
+            CHECK_EQ(u32(cur + 4), i == 0 ? list : static_cast<unsigned>(node(want[i - 1])));    // ln_Pred
+            cur = u32(cur);
+        }
+        CHECK_EQ(cur, list + 4);                                                  // the tail marker
+        CHECK_EQ(u32(list + 8), static_cast<unsigned>(node(2)));                  // lh_TailPred
+
+        // CopyMem copies overlapping blocks correctly; AvailMem sees allocations
+        Session t;
+        call(t, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        call(t, "{\"cmd\":\"write\",\"addr\":196608,\"hex\":\"0102030405060708\"}");
+        const std::string p2 =
+            "        ORG $20000\nstart:  MOVEA.L 4.W,A6\n"
+            "        MOVEQ #0,D1\n        JSR -216(A6)\n        MOVE.L D0,D6\n"                       // AvailMem: all free
+            "        MOVE.L #1000,D0\n        MOVEQ #0,D1\n        JSR -198(A6)\n"                // AllocMem 1000 -> 1000 rounds to 1000 (125 * 8)
+            "        MOVEQ #0,D1\n        JSR -216(A6)\n        MOVE.L D0,D7\n"                       // AvailMem after
+            "        MOVE.L #$20000,D1\n        JSR -216(A6)\n        MOVE.L D0,D5\n"             // MEMF_LARGEST
+            "        MOVE.L #$30000,A0\n        MOVE.L #$30002,A1\n        MOVEQ #6,D0\n        JSR -624(A6)\n"   // CopyMem, overlapping, forwards
+            "        MOVE.L #$30003,A0\n        MOVE.L #$30001,A1\n        MOVEQ #3,D0\n        JSR -630(A6)\n"   // CopyMemQuick, overlapping, backwards
+            "        RTS\n";
+        CHECK(ok(load(t, p2)));
+        const Json r2 = call(t, "{\"cmd\":\"run\"}");
+        CHECK_EQ(str(r2, "stop"), std::string("exit"));
+        CHECK_EQ(std::stoul(regOf(r2, "D6"), nullptr, 16) - std::stoul(regOf(r2, "D7"), nullptr, 16), 1000UL);
+        CHECK_EQ(std::stoul(regOf(r2, "D5"), nullptr, 16), std::stoul(regOf(r2, "D7"), nullptr, 16));    // one free block: the largest one is all of it
+        CHECK_EQ(str(call(t, "{\"cmd\":\"read\",\"addr\":196608,\"len\":8}"), "hex"), std::string("0102030403040506"));   // 01..08, copy 6 bytes from +0 to +2: 01 02 01 02 03 04 05 06; then 3 bytes from +3 to +1: 01 02 03 04 03 04 05 06
+    }
+
     // ---- state: checkpoints cover the OS, the stop is a protocol answer, the options ----------------------------------------------------
     {
         Session s;
