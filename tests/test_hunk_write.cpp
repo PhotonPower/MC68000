@@ -245,6 +245,77 @@ int main() {
         CHECK(assemble("        ORG $1000\nx: MOVE.L #x,D0\n        MOVE.L #$FFFFFFFF,D1\n").ok());
     }
 
+    // ---- explicit .S branches behind an instruction that refers to a label further down ---------------------------------------------------------------
+    // Found when a calculator for the second blind test was assembled: `MOVE.L A0,v` with `v` defined below is 4 bytes in the first pass (the
+    // address is still unknown) and 6 once it is a relocatable address. The branch behind it then saw a label that was a pass behind, a distance of 0
+    // instead of 2, failed, and a failed instruction used to take no space: the labels moved up and confirmed the error in the next pass.
+    {
+        const AssemblyResult r = asmOk("        SECTION code,CODE\n        MOVE.L  A0,v\n        BRA.S   out\n        MOVEQ   #5,D1\nout:    NOP\nv:      DS.L 1\n");
+        CHECK(r.ok());
+        if (r.ok()) {
+            const std::vector<Byte>& code = r.sections[0].bytes;
+            CHECK_EQ(code.size(), std::size_t{16});
+            CHECK_EQ(code[6], Byte{0x60});                      // BRA.S ...
+            CHECK_EQ(code[7], Byte{0x02});                      // ... over the 2 bytes of MOVEQ
+        }
+        // a branch that really is too far is still an error (and says so)
+        std::string far = "        SECTION code,CODE\n        MOVE.L  A0,v\n        BRA.S   out\n";
+        for (int i = 0; i < 70; ++i) far += "        MOVE.L  #1,D0\n";
+        far += "out:    NOP\nv:      DS.L 1\n";
+        CHECK(firstError(far).find("branch too far") != std::string::npos);
+        // ... and so is one that is not an instruction at all: no label can run away
+        CHECK(!firstError("        SECTION code,CODE\n        MOVE.L  A0,v\n        FROB D0\n        BRA.S out\n        MOVEQ #5,D1\nout:    NOP\nv: DS.L 1\n").empty());
+
+        // random: the hunk, loaded, is the same memory as the absolute program (explicit .L, so that both have the same sizes)
+        // (the section program leaves the size of the address to the assembler - that is what changes between passes; the absolute one says .L)
+        std::mt19937 rng(777);
+        int branches = 0;
+        for (int trial = 0; trial < 300; ++trial) {
+            std::string code, absCode;
+            int lab = 0;
+            const int n = 3 + static_cast<int>(rng() % 9);
+            for (int i = 0; i < n; ++i) {
+                switch (rng() % 5) {
+                    case 0: {
+                        const std::string v = "var" + std::to_string(rng() % 3);
+                        code += "        MOVE.L  A0," + v + "\n";
+                        absCode += "        MOVE.L  A0," + v + ".L\n";
+                        break;
+                    }
+                    case 1: {
+                        const std::string v = "var" + std::to_string(rng() % 3);
+                        code += "        MOVE.W  D0," + v + "\n";
+                        absCode += "        MOVE.W  D0," + v + ".L\n";
+                        break;
+                    }
+                    case 2: {
+                        const std::string l = "t" + std::to_string(lab++);
+                        std::string both = std::string("        ") + (rng() % 2 ? "BRA.S   " : "BEQ.S   ") + l + "\n";
+                        for (unsigned k = 1 + static_cast<unsigned>(rng() % 4); k > 0; --k) both += "        MOVEQ   #" + std::to_string(k) + ",D" + std::to_string(k % 8) + "\n";
+                        both += l + ":\n";
+                        code += both;
+                        absCode += both;
+                        ++branches;
+                        break;
+                    }
+                    default: code += "        NOP\n"; absCode += "        NOP\n"; break;
+                }
+            }
+            const std::string vars = "        RTS\nvar0:   DS.L 1\nvar1:   DS.L 1\nvar2:   DS.L 1\n";
+            const AssemblyResult hr = asmOk("        SECTION code,CODE\n" + code + vars);
+            const AssemblyResult ar = asmOk("        ORG $20000\n" + absCode + vars);
+            CHECK(hr.ok());
+            CHECK(ar.ok());
+            if (!hr.ok() || !ar.ok()) continue;
+            const HunkImage img = loadHunkFile(writeHunkFile(hr.sections), 0x20000);
+            std::vector<Byte> loaded;
+            for (const Segment& seg : img.segments) loaded.insert(loaded.end(), seg.bytes.begin(), seg.bytes.end());
+            loaded.resize(ar.flatten().size());
+            CHECK(loaded == ar.flatten());
+        }
+        CHECK(branches > 300);
+    }
+
     // ---- the relocation check that does not rely on my own reasoning: random programs assembled twice -----------------------------------------------
     // (a) as a SECTION program, written as a hunk file and loaded at `base`; (b) as an absolute program with every section at the address the
     // loader gives it. The two memory images must be identical.

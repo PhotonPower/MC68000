@@ -373,6 +373,34 @@ int main() {
         CHECK(has(text, "DC.B     $61,9,\"b c d\",0"));      // a single character is written as a number
     }
 
+    // ---- a table of pointers to strings that are not words: not code, not numbers (found with the calculator of the second blind test) ----------------------------
+    {
+        const Built b(
+            "        ORG $1000\nstart:  LEA tab(PC),A2\n        MOVE.L (A2)+,D0\n        RTS\n"
+            "tab:    DC.L s1,s2,s3,s4,0\n"
+            "s1:     DC.B \"3 4 + 5 *\",0\ns2:     DC.B \"100 7 /\",0\ns3:     DC.B \"8 0 /\",0\ns4:     DC.B \"2 3 4 * +\",0\n");
+        const Analysis an = analyse(b);
+        // they decode as instructions ("3 4 + 5 *" is a run of valid opcodes), but four printable characters are text: no suggestion of a table of routines
+        for (const JumpTable& t : an.jumpTables()) CHECK(t.kind != JumpTable::Kind::Pointers);
+        const std::vector<DataGuess> g = an.guessData();
+        const DataGuess* tab = at(g, b.sym("tab"));
+        CHECK(tab != nullptr && tab->kind == DataGuess::Kind::Pointers);       // not "longs": the code walks through it with (A2)+ .L
+        if (tab) CHECK_EQ(tab->length, 16U);                                   // four pointers, the terminating 0 is not one
+        for (const char* name : {"s1", "s2", "s3", "s4"}) {
+            const DataGuess* t = at(g, b.sym(name));
+            CHECK(t != nullptr && t->kind == DataGuess::Kind::Text);           // strings of digits and operators, found through the table
+        }
+        CHECK_EQ(an.routines().size(), std::size_t{1});                        // no routines made of strings
+        // a table of routines is still a table of routines
+        const Built code(
+            "        ORG $1000\nstart:  LEA tab(PC),A2\n        MOVE.L (A2)+,D0\n        RTS\n"
+            "tab:    DC.L f1,f2,f3\nf1:     MOVEQ #1,D0\n        RTS\nf2:     MOVEQ #2,D0\n        RTS\nf3:     MOVEQ #3,D0\n        RTS\n");
+        bool suggested = false;
+        const Analysis codeAnalysis = analyse(code);
+        for (const JumpTable& t : codeAnalysis.jumpTables()) suggested = suggested || (t.kind == JumpTable::Kind::Pointers && !t.followed);
+        CHECK(suggested);
+    }
+
     // ---- what the prompt of a routine and the final listing need (found in the first blind run with a model's job done by an agent) -------------------------
     {
         const AssemblyResult r = assemble(

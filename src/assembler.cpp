@@ -103,13 +103,17 @@ SourceLine parseLine(int number, const std::string& original) {
 
 struct Pass {
     Pass(const std::vector<SourceLine>& l, const AssemblerOptions& o, const std::map<std::string, std::int64_t>& p,
-         std::vector<int>& h, bool hunkMode_)
-        : lines(l), options(o), previous(p), hints(h), hunkMode(hunkMode_) {}
+         std::vector<int>& h, std::vector<std::size_t>& len, bool hunkMode_)
+        : lines(l), options(o), previous(p), hints(h), lengths(len), hunkMode(hunkMode_) {}
 
     const std::vector<SourceLine>& lines;
     const AssemblerOptions& options;
     const std::map<std::string, std::int64_t>& previous;
     std::vector<int>& hints;
+    /// Length in bytes that the instruction of each line had when it last encoded without an error. An instruction that fails in a pass must not
+    /// shrink to nothing: with labels that are still a pass behind (an operand that grew), one spurious error would pull every following label
+    /// forward, and the error would confirm itself in the next pass ("branch too far for .S" over a distance of 2).
+    std::vector<std::size_t>& lengths;
 
     bool hunkMode;
     std::vector<HunkSection> secs;   // SECTION programs
@@ -402,7 +406,9 @@ struct Pass {
                     });
                     if (!r.ok) {
                         error(l.number, r.error);
+                        produced.assign(lengths[idx], 0);   // keeps the labels where they were; the bytes are discarded with the errors
                     } else {
+                        lengths[idx] = r.bytes.size();
                         if (!undefinedName.empty()) pendingUndefinedList.push_back({l.number, undefinedName});
                         if (r.level != hints[idx]) {
                             hints[idx] = r.level;
@@ -498,6 +504,7 @@ AssemblyResult assemble(const std::string& source, const AssemblerOptions& optio
     }
 
     std::vector<int> hints(lines.size(), 0);
+    std::vector<std::size_t> lengths(lines.size(), 0);
     std::map<std::string, std::int64_t> previous;
     AssemblyResult result;
     // A program with a SECTION directive is assembled relocatably.
@@ -507,7 +514,7 @@ AssemblyResult assemble(const std::string& source, const AssemblerOptions& optio
     result.hunk = hunkMode;
 
     for (int passNo = 0; passNo < kMaxPasses; ++passNo) {
-        Pass pass(lines, options, previous, hints, hunkMode);
+        Pass pass(lines, options, previous, hints, lengths, hunkMode);
         pass.run();
         const bool stable = !pass.hintsChanged && pass.symbols == previous;
         if (stable || passNo == kMaxPasses - 1) {

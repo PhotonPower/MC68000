@@ -203,6 +203,18 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
 // Rows of longword addresses of code that data references point at (LEA tab(PC),A0 ...): reported as suggestions, not followed,
 // because a row of numbers that look like addresses can also be plain data.
 void Analysis::scanPointerTables() {
+    // A string decodes as instructions as well ("3 4 + 5 *" is a run of valid opcodes): a target that starts with four printable characters, at least
+    // three of them letters, digits or blanks, is text. Rows of such pointers are tables of strings (data_regions finds those), not of routines.
+    auto looksLikeText = [&](Address t) {
+        if (t + 4 > to_) return false;
+        unsigned alnum = 0;
+        for (Address i = 0; i < 4; ++i) {
+            const Byte b = mem_.read8(t + i);
+            if (b < 0x20 || b >= 0x7F) return false;
+            if ((b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == ' ') ++alnum;
+        }
+        return alnum >= 3;
+    };
     std::set<Address> covered;
     for (const JumpTable& t : tables_)
         for (Address b = t.table; b < t.table + t.bytes; ++b) covered.insert(b);
@@ -217,7 +229,7 @@ void Analysis::scanPointerTables() {
             if (p != r && refs_.count(p)) break;   // another table starts here
             const Long v = mem_.read32(p);
             const Address t = v & kAddressMask;
-            if (v != t || !inRange(t) || (t & 1U) || (isData_ && isData_(t))) break;
+            if (v != t || !inRange(t) || (t & 1U) || (isData_ && isData_(t)) || looksLikeText(t)) break;
             const Instruction first = decode(mem_, t);
             if (!first.valid || (first.mnemonic == "ORI.B" && first.operands == "#$00,D0")) break;   // not zero words
             jt.slots.push_back(p);
@@ -348,6 +360,15 @@ std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& c
     std::vector<DataGuess> out;
     std::vector<bool> used(to_ - from_, false);
 
+    // printable characters up to a NUL (at most 80), in memory that is neither code nor claimed: what a pointer in a table of strings points at
+    auto printableStringAt = [&](Address t, unsigned& length) {
+        if (!inRange(t)) return false;
+        unsigned n = 0;
+        while (n < 80 && t + n < to_ && free(t + n) && textChar(mem_.read8(t + n))) ++n;
+        if (n == 0 || t + n >= to_ || !free(t + n) || mem_.read8(t + n) != 0) return false;
+        length = n + 1;
+        return true;
+    };
     // tables of numbers: code loads the address of the table into an address register and then walks through it
     // (An)+ or (An,Xn) with one operand size. Several sizes, or only fixed displacements d(An), suggest a structure: no guess.
     {
@@ -430,6 +451,15 @@ std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& c
             while (e < to_ && free(e) && !used[e - from_] && (e == start || !(refs_.count(e) || jumpTargets_.count(e) || entries_.count(e)))) ++e;
             const unsigned length = (e - start) / size * size;
             if (length < 2 * size) continue;                                 // a table has at least two entries
+            if (size == 4) {                                                 // a row of addresses of strings is a table of pointers, not of numbers
+                unsigned stringy = 0;
+                for (Address p = start; p + 4 <= start + length && p < start + 32; p += 4) {
+                    const Long v = mem_.read32(p);
+                    unsigned len = 0;
+                    if (v == (v & kAddressMask) && printableStringAt(v, len)) ++stringy;
+                }
+                if (stringy >= 3) continue;
+            }
             bool allZero = true;
             for (unsigned i = 0; i < length && allZero; ++i) allZero = mem_.read8(start + i) == 0;
             if (allZero) continue;                                           // an empty buffer: the zero run logic handles it
@@ -488,9 +518,9 @@ std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& c
     std::set<Address> textStarts;
     for (const DataGuess& g : out)
         if (g.kind == DataGuess::Kind::Text) textStarts.insert(g.start);
-    auto shortString = [&](Address t, unsigned& length) {
+    auto shortString = [&](Address t, unsigned& length) {   // a string a pointer of a table points at: short ("No") or long, printable up to its NUL
         unsigned n = 0;
-        while (n < 3 && t + n < to_ && free(t + n) && !used[t + n - from_] && textChar(mem_.read8(t + n))) ++n;
+        while (n < 80 && t + n < to_ && free(t + n) && !used[t + n - from_] && textChar(mem_.read8(t + n))) ++n;
         if (n == 0 || t + n >= to_ || !free(t + n) || used[t + n - from_] || mem_.read8(t + n) != 0) return false;
         length = n + 1;
         return true;
