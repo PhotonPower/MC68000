@@ -173,9 +173,9 @@ int main() {
         CHECK(r.verified);
         CHECK(has(r.text, "jump table of the jump at $001004: 3 branch entries"));
         CHECK(has(r.text, "jump table of the jump at $001026: target = $00102A + signed word"));
-        CHECK(has(r.text, "DC.W     $000A                        ; -> loc_001034"));
-        CHECK(has(r.text, "DC.W     $0016                        ; -> loc_001040"));
-        CHECK(has(r.text, "loc_001034:\n        MOVEQ    #$0A,D3"));
+        CHECK(has(r.text, "DC.W     $000A                        ; -> sub_001034"));
+        CHECK(has(r.text, "DC.W     $0016                        ; -> sub_001040"));
+        CHECK(has(r.text, "sub_001034:\n        MOVEQ    #$0A,D3"));   // a case of a jump table is a routine of its own
     }
 
     // ---- the session: analyze, jump_tables, ann_data, analyze again -------------------------------------------------------------------------------
@@ -185,7 +185,7 @@ int main() {
         const Json a1 = call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\",\"dispatch\",\"callit\"]}");
         CHECK(ok(a1));
         CHECK_EQ(a1.find("jump_tables")->asInt(), std::int64_t{3});
-        CHECK_EQ(a1.find("routines")->asInt(), std::int64_t{3});
+        CHECK_EQ(a1.find("routines")->asInt(), std::int64_t{10});   // 3 entries + 3 branch cases + 4 offset cases
         const Json jt = call(s, "{\"cmd\":\"jump_tables\"}");
         CHECK(ok(jt));
         const std::vector<Json>& tables = jt.find("tables")->items();
@@ -209,7 +209,7 @@ int main() {
         // follow the suggestion: mark the region, analyse again
         CHECK(ok(call(s, "{\"cmd\":\"ann_data\",\"addr\":\"ptab\",\"length\":12,\"kind\":\"pointers\",\"name\":\"handlers\"}")));
         const Json a2 = call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\",\"dispatch\",\"callit\"]}");
-        CHECK_EQ(a2.find("routines")->asInt(), std::int64_t{6});
+        CHECK_EQ(a2.find("routines")->asInt(), std::int64_t{13});   // + the 3 handlers of the pointer table
         const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
         CHECK(lst.find("verified")->asBool());
         CHECK(has(lst.find("listing")->asString(), "DC.L     sub_00105C,sub_001060,sub_001064"));

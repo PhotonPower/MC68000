@@ -63,8 +63,10 @@ Mock-Ollama.
 
 Sprungtabellen (Branch- und Offset-Tabellen automatisch, Zeigertabellen als Vorschlag) erkennt die Analyse seit 0.5 ([reverse-engineering.md](reverse-engineering.md#sprungtabellen)).
 
+Vorbereitet für die Erprobung: Dry-Run, Beispielprogramm und [Anleitung](walkthrough.md).
+
 Offen:
-- **Erprobung mit einem echten Modell** (bisher nur Mock) und Feinschliff von Prompt und Parametern
+- **Erprobung mit einem echten Modell** (bisher nur Mock; zurückgestellt, bis der Emulator frei ist) und Feinschliff von Prompt und Parametern
 - Erkennung weiterer Datentypen (Zahlentabellen, Strukturen, Bitplanes, Samples); Text und String-Zeiger sind seit 0.5 erledigt
 
 ## Danach (Ideen)

@@ -12,7 +12,7 @@ Everything the model says is stored as names and comments only; the final listin
 the real bytes and verified by assembling it again, so it always describes exactly the same program.
 
 Requires only the Python standard library, a built `m68ktool`, and a running Ollama server with a
-tool-capable model (default `qwen3:8b`; use `--model` for another tag).
+tool-capable model (default `qwen3-vl:8b-instruct`, the same as in the Z80 project; use `--model` for another tag, `ollama list` shows what is installed).
 
 Example:
     python3 agent/m68k_annotate.py --hunk game --project game.m68kproj.json --out game_annotated.s --lang German
@@ -94,6 +94,14 @@ class Ollama:
         self.options = {"num_ctx": num_ctx, "temperature": temperature, "top_p": 0.8, "top_k": 20, "presence_penalty": 1.0,
                         "num_predict": max_tokens}
 
+    def installed(self):
+        """Names of the installed models (best effort, for error messages), or None."""
+        try:
+            with urllib.request.urlopen(self.url.rsplit("/api/", 1)[0] + "/api/tags", timeout=10) as resp:
+                return [m.get("name", "?") for m in json.loads(resp.read()).get("models", [])]
+        except Exception:  # noqa: BLE001
+            return None
+
     def capabilities(self):
         """What Ollama says the model can do (e.g. {"completion", "tools", "thinking"}), or None if unknown."""
         try:
@@ -127,6 +135,11 @@ class Ollama:
                     data = json.dumps(body).encode()
                     last = OllamaError(detail)
                     continue
+                if e.code == 404:
+                    names = self.installed()
+                    raise OllamaError(f"model '{self.model}' not found on {self.url.rsplit('/api/', 1)[0]} (Ollama said: {detail.strip()[:120]}). "
+                                      + ("Installed: " + (", ".join(names) if names else "nothing") + ". " if names is not None else "")
+                                      + f"Pull it with `ollama pull {self.model}` or choose another one with --model.") from e
                 if 400 <= e.code < 500:
                     raise OllamaError(f"Ollama returned HTTP {e.code}: {detail}") from e
                 last = OllamaError(f"Ollama returned HTTP {e.code}: {detail}")
@@ -636,8 +649,9 @@ class Annotator:
 
     def __init__(self, server, passes, args, log=None):
         self.s, self.passes, self.a, self.log = server, passes, args, log
-        self.llm = passes[0]["llm"]
+        self.llm = passes[0]["llm"] if passes else None   # no model in a dry run
         self.max_turns = args.max_turns
+        self.entries = []
         self.mode = "explore"
         self.tools = Tools(server)
 
@@ -675,6 +689,7 @@ class Annotator:
             s.ok(cmd="ann_load", file=a.project)
             self.say("project loaded")
         entries = a.entry or ([a.org] if a.bin else [s.ok(cmd="regs")["regs"]["PC"]])
+        self.entries = entries
         r = s.ok(cmd="analyze", entries=entries, reset=True)
         self.say(f'analysed {r["instructions"]} instructions, {r["from"]}-{r["to"]}, {r["routines"]} routines'
                  + (f', {r["jump_tables"]} jump tables' if r.get("jump_tables") else ""))
@@ -906,6 +921,48 @@ class Annotator:
                 f.write("\n".join(lines))
         return len(open_rows)
 
+    def dry_run(self):
+        """What a real run would do, without contacting a model: routines in processing order with sizes and prompt estimates, jump tables,
+        data regions, library calls. Lets you check the load address, the entry points and the model's context window first."""
+        s, say = self.s, self.say
+        say("")
+        say("== dry run: no model is contacted ==")
+        routines = s.ok(cmd="routines")["routines"]
+        todo = s.ok(cmd="routines", undocumented_only=True)["routines"]
+        order = {r["addr"]: i for i, r in enumerate(todo, 1)}
+        base_tokens = int(len(SYSTEM_PROMPT) / 3.5)
+        rows, total, largest = [], 0, (0, "")
+        for r in routines:
+            start, end = self.extent(r)
+            lst = s.ok(cmd="listing", verify=False, addresses=True, max_chars=14000, **{"from": start, "to": end})
+            tokens = int(len(lst["listing"]) / 3.5) + base_tokens
+            if r["addr"] in order:
+                total += tokens
+                largest = max(largest, (tokens, r["name"]))
+            rows.append((order.get(r["addr"]), r, tokens, to_int(end) - to_int(start)))
+        say(f'{len(routines)} routines, {len(todo)} still without documentation. Processing order (leaves first):')
+        for pos, r, tokens, size in sorted(rows, key=lambda x: (x[0] is None, x[0] or 0)):
+            lib = len(r["library_calls"])
+            say(f'  {str(pos) + ".":>4} {r["name"]:<22} {r["addr"]}  {size:>5} B  {r["instructions"]:>4} instr  calls {len(r["callees"]) + len(r["external_calls"]):>2}'
+                f'  called by {len(r["callers"]):>2}' + (f'  library calls {lib}' if lib else "") + f'  ~{tokens} tokens' + ("  (documented)" if pos is None else ""))
+        tables = s.ok(cmd="jump_tables", max_entries=0)["tables"]
+        for t in tables:
+            say(f'jump table ({t["kind"]}) at {t["table"]}: {t["entry_count"]} entries' + ("" if t["followed"] else " - suggested, not followed"))
+        regions = s.ok(cmd="data_regions")["regions"]
+        if regions:
+            kinds = Counter(x["kind"] for x in regions)
+            say("data not yet annotated: " + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())))
+        libs = Counter(lc["offset"] for r in routines for lc in r["library_calls"])
+        if libs:
+            say("library calls (JSR offset(A6)): " + ", ".join(f"{off} x{n}" for off, n in sorted(libs.items())) + "  (the library behind A6 is only known at run time)")
+        say(f'estimate: about {total} prompt tokens for the first message of every routine; the conversation grows with each reply '
+            f'(typically 3-8 replies per routine, at most {self.a.max_turns}).')
+        ctx = self.a.num_ctx
+        if largest[0] > ctx * 0.4:
+            say(f'WARNING: the largest routine ({largest[1]}, ~{largest[0]} tokens) takes more than 40% of the context window ({ctx}); '
+                f'raise --num-ctx (and check that the model supports it) or accept that replies may be cut short.')
+        say("Run the same command without --dry-run to start the analysis.")
+
     def run(self):
         s = self.s
         for n, p in enumerate(self.passes, 1):
@@ -959,13 +1016,14 @@ def main(argv=None):
     p.add_argument("--chip-kb", type=int, default=512, help="chip RAM of the amiga500 machine")
     p.add_argument("--no-auto-tables", action="store_true", help="do not mark and follow tables of code addresses that the analysis only suggests")
     p.add_argument("--no-auto-data", action="store_true", help="do not mark the strings and string-pointer tables that the analysis recognises as data regions")
+    p.add_argument("--dry-run", action="store_true", help="load the program and run the analysis, print what a real run would do (routines, order, tables, data, token estimates), contact no model")
     p.add_argument("--no-os", action="store_true", help="do not emulate exec/dos library calls (they then run into unmapped memory)")
     p.add_argument("--rom", help="Kickstart ROM image (amiga500 only; your own copy, it is not part of this project)")
     p.add_argument("--entry", action="append", help='entry point (repeatable), default: the start of the program, e.g. "0x20000"')
     p.add_argument("--project", help="annotation file (JSON); loaded if present, saved after every routine")
     p.add_argument("--out", help="write the final annotated listing here")
     p.add_argument("--only", action="append", help="process only this routine address (repeatable)")
-    p.add_argument("--model", default="qwen3:8b-instruct", help="Ollama model tag for pass 1 (needs tool support)")
+    p.add_argument("--model", default="qwen3-vl:8b-instruct", help="Ollama model tag for pass 1 (needs tool support; a vision model is fine, only text is sent)")
     p.add_argument("--refine-model", action="append", default=[], metavar="MODEL",
                    help="model for one more pass that checks and completes routines that still have gaps (repeatable; e.g. a slower thinking model)")
     p.add_argument("--refine-think", choices=["auto", "true", "false"], default="auto", help="thinking mode in refinement passes (auto: if the model has it)")
@@ -991,6 +1049,11 @@ def main(argv=None):
     server = M68kServer(find_m68ktool(a.m68ktool))
     log = open(a.log, "a", encoding="utf-8") if a.log else None
     try:
+        if a.dry_run:
+            worker = Annotator(server, [], a, log)
+            worker.setup()
+            worker.dry_run()
+            return 0
         passes = [make_pass(a, a.model, "explore", think=a.think == "true", max_tokens=a.max_tokens, max_turns=a.max_turns)]
         for model in a.refine_model:
             passes.append(make_pass(a, model, "refine", think=a.refine_think, max_tokens=a.refine_max_tokens, max_turns=a.refine_max_turns))

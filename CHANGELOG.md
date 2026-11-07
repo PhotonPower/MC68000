@@ -7,6 +7,10 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Vorbereitung der Erprobung:** `--dry-run` im Orchestrator (Analyse ohne Modell, Bearbeitungsreihenfolge, Sprungtabellen, Datenbereiche, Bibliotheksaufrufe, Token-Schätzung mit Warnung);
+  Beispielprogramm `examples/amiga/hello_amiga.s` (Bibliothek öffnen, Strings, Sprungtabelle, Zahlentabelle, Dezimalausgabe) mit Integrationstest über die ganze Kette; Anleitung `docs/walkthrough.md`.
+- **Standard-Modell** des Orchestrators jetzt `qwen3-vl:8b-instruct` (wie im Z80-Projekt; das vorher eingetragene Tag war ungeprüft); bei einem fehlenden Modell nennt die Fehlermeldung die installierten Modelle.
+- Die **Fälle einer Sprungtabelle** sind eigene Einstiegspunkte (Routinen), damit sie dokumentiert werden; Strings im Listing mit Steuerzeichen und Terminator in einer Zeile (`DC.B "Hello",10,0`).
 - **OS-Emulation erweitert:** exec-Listenfunktionen (`AddHead`, `AddTail`, `Insert`, `Remove`, `RemHead`, `RemTail`, `Enqueue`, `FindName`) auf echten `List`/`Node`-Strukturen, `CopyMem`/`CopyMemQuick` (überlappend
   korrekt) und `AvailMem`. Test `os` jetzt mit 100 Prüfungen (Listenfolge vor- und rückwärts nachgeprüft). Funktionsnamen und Offsets wieder aus dem Gedächtnis: gegen das NDK prüfen.
 - **Datentyp-Erkennung** (`Analysis::guessData`, Befehl `data_regions`): Strings (referenziert, NUL-terminiert oder lang), Tabellen von String-Zeigern (auch mit kurzen Strings) und Nullbereiche; `apply:true`

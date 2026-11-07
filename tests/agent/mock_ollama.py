@@ -78,6 +78,12 @@ class MockOllama:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def do_GET(self):  # noqa: N802
+                if self.path.endswith("/api/tags"):
+                    self._send(200, json.dumps({"models": [{"name": "other:1b"}, {"name": "qwen3-vl:8b-instruct"}]}).encode())
+                else:
+                    self._send(404, b"not found", "text/plain")
+
             def do_POST(self):  # noqa: N802
                 length = int(self.headers.get("Content-Length", 0))
                 body = json.loads(self.rfile.read(length))

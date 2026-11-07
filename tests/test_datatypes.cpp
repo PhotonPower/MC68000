@@ -175,6 +175,25 @@ int main() {
         CHECK(has(text, "DS.B     32"));
     }
 
+    // ---- control characters stay in the string statement -------------------------------------------------------------------------------------------------
+    {
+        Session s;
+        const std::string src =
+            "        ORG $1000\nstart:  LEA msg(PC),A0\n        RTS\n"
+            "msg:    DC.B \"Line one\",10,\"Line two\",13,10,0\n"
+            "tab:    DC.B \"a\tb c d\",0\n"
+            "odd:    DC.B \"x\",1,2,\"yz\",0\n        EVEN\n";
+        CHECK(ok(call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(src) + "\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        CHECK(ok(call(s, "{\"cmd\":\"data_regions\",\"apply\":true}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
+        CHECK(lst.find("verified")->asBool());
+        const std::string text = lst.find("listing")->asString();
+        CHECK(has(text, "DC.B     \"Line one\",10,\"Line two\",13,10,0"));
+        CHECK(has(text, "DC.B     $61,9,\"b c d\",0"));      // a single character is written as a number
+    }
+
     // ---- random strings: the listing always verifies, the strings are found -----------------------------------------------------------------------------------
     {
         std::mt19937 rng(2024);

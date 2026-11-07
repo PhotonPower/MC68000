@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import contextlib
 from contextlib import redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -291,8 +292,13 @@ class OrchestratorTest(unittest.TestCase):
         code, _ = run_main(self.argv(model="nano"))
         self.assertEqual(code, 2)                      # no tool support
         self.mock(fail_with=404)
-        code, _ = run_main(self.argv())
-        self.assertEqual(code, 2)                      # model not found
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code, _ = run_main(self.argv())
+        self.assertEqual(code, 2)                      # model not found: the message says what is installed and what to do
+        self.assertIn("model 'mock' not found", err.getvalue())
+        self.assertIn("Installed: other:1b, qwen3-vl:8b-instruct", err.getvalue())
+        self.assertIn("ollama pull mock", err.getvalue())
         self.url = "http://127.0.0.1:9"
         code, _ = run_main(self.argv())
         self.assertEqual(code, 2)                      # nothing listens there

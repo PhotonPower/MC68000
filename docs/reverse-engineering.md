@@ -33,8 +33,10 @@ zurückgerollt; die geladene Datei bleibt unberührt. Es gibt **keine Bilder**: 
 
 ```sh
 python3 agent/m68k_annotate.py --hunk programm --project programm.m68kproj.json --out programm_kommentiert.s \
-        --lang Deutsch --model qwen3:8b-instruct --log programm.log.jsonl
+        --lang Deutsch --model qwen3-vl:8b-instruct --log programm.log.jsonl
 ```
+
+Schritt für Schritt mit dem Beispielprogramm: [walkthrough.md](walkthrough.md). **Vorher** lohnt `--dry-run`: Er lädt das Programm und führt die Analyse aus, ohne ein Modell zu benutzen, und zeigt die Routinen in der Bearbeitungsreihenfolge, Sprungtabellen, Datenbereiche, Bibliotheksaufrufe und eine Schätzung der Prompt-Größe (mit Warnung, wenn die größte Routine das Kontextfenster zu sehr beansprucht).
 
 Voraussetzungen: gebautes `m68ktool` (wird in `build/` gesucht, sonst `--m68ktool`), Python ≥ 3.9 (nur Standardbibliothek), ein Ollama-Server
 mit einem Modell, das **Tool-Aufrufe** kann (Fähigkeiten erkennt das Skript über `/api/show`; ein Modell ohne Tools wird abgelehnt).
@@ -157,7 +159,7 @@ Die Codefluss-Analyse erkennt Tabellen hinter indizierten Sprüngen, damit ihre 
 | **Offset-Tabelle** (`offset`) | `MOVE.W tab(PC,Dn),Dm` unmittelbar (höchstens ein Befehl dazwischen) vor `JMP`/`JSR base(PC,Dm)`: Wörter, Ziel = `base` + Wort mit Vorzeichen | die Wörter sind **Daten**, die Ziele werden verfolgt; die Tabelle endet am ersten ungültigen Ziel oder dort, wo das erste Ziel beginnt (mindestens zwei Einträge) |
 | **Zeigertabelle** (`pointers`) | Folge von Langwörtern (mindestens drei), die auf gültigen Code im Bereich zeigen, hinter einem Datenverweis (`LEA tab(PC),A0` …) | nur ein **Vorschlag** (`followed: false`): Zahlen, die wie Adressen aussehen, können auch Daten sein. Markiert man den Bereich mit `ann_data kind=pointers`, werden die Ziele beim nächsten `analyze` zu Einstiegspunkten (Routinen) |
 
-Die beiden ersten Muster hängen am Sprungbefehl selbst und sind daher zuverlässig; sie werden automatisch verfolgt. `jump_tables` zeigt alle Tabellen (Art, Sprungbefehl, Tabellenadresse, Basis, Einträge, `followed`).
+Die beiden ersten Muster hängen am Sprungbefehl selbst und sind daher zuverlässig; sie werden automatisch verfolgt, und **jeder Fall der Tabelle ist ein eigener Einstiegspunkt (eine eigene Routine)** – sonst gäbe es für ihn nie einen Auftrag an das Modell. `jump_tables` zeigt alle Tabellen (Art, Sprungbefehl, Tabellenadresse, Basis, Einträge, `followed`).
 Im **Listing** steht vor einer Branch-Tabelle ein Kommentar, eine Offset-Tabelle erscheint als `DC.W`-Zeilen mit dem Ziel als Kommentar (`; -> loc_001034`) und einem Hinweis auf Sprungbefehl und Basis; das Listing wird wie immer neu assembliert und
 verglichen. Der **Orchestrator** markiert vorgeschlagene Zeigertabellen von selbst (`jump_table_<adresse>`) und analysiert neu (`--no-auto-tables` schaltet das ab); der Prompt weist das Modell an, die Fälle zu benennen.
 Nicht erkannt werden Tabellen, die über ein Adressregister indiziert werden (`MOVE.W (A0,D0.W),D0`) und Muster mit mehr als einer Zwischenanweisung; sie lassen sich von Hand mit `ann_data` und `ann_label` festhalten.

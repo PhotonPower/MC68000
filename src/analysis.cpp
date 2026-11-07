@@ -139,7 +139,11 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
         if (jt.slots.size() >= 2) {
             jt.bytes = p - base;
             for (const Address slot : jt.slots) work.push_back(slot);
-            for (const Address t : jt.targets) jumpTargets_.insert(t);
+            for (const Address t : jt.targets) {
+                jumpTargets_.insert(t);
+                entries_.insert(t);
+                work.push_back(t);
+            }
             refs_.insert(base);
             tables_.push_back(std::move(jt));
             return;
@@ -184,6 +188,7 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
         for (const Address t : jt.targets) {
             work.push_back(t);
             jumpTargets_.insert(t);
+            entries_.insert(t);   // a case of the table is code that nobody calls directly: it is its own routine
         }
         refs_.insert(table);
         tables_.push_back(std::move(jt));

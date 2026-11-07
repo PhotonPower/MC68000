@@ -1,6 +1,7 @@
 #include "m68k/listing.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <cctype>
 #include <set>
 #include <sstream>
@@ -179,6 +180,40 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         return std::string(1, q) + s + q;
     };
 
+    // One DC.B statement for a string: printable runs in quotes, control characters as numbers ("Hello",10,0). It ends after the NUL terminator, at `limit`
+    // or in front of an address for which `stop` is true; at least one byte is always taken.
+    auto textStatement = [&](Address a, Address limit, const std::function<bool(Address)>& stop, Address& next) -> std::string {
+        std::string items;
+        Address q = a;
+        while (q < limit && items.size() < 76) {
+            if (q != a && stop(q)) break;
+            const Byte b = view.read8(q);
+            std::string item;
+            std::size_t taken = 1;
+            if (printable(b)) {
+                std::size_t run = 0;
+                while (q + run < limit && printable(view.read8(q + static_cast<Address>(run))) && (run == 0 || !stop(q + static_cast<Address>(run)))) ++run;
+                std::size_t used = 0;
+                const std::string lit = run >= 2 ? textLine(q, run, used) : std::string();
+                if (!lit.empty()) {
+                    item = lit;
+                    taken = used;
+                } else {
+                    item = hexv(b, 2);   // a single character is written as a number
+                }
+            } else if (b == 0 || b == 9 || b == 10 || b == 13) {
+                item = std::to_string(b);
+            } else {
+                item = hexv(b, 2);
+            }
+            items += (items.empty() ? "" : ",") + item;
+            q += static_cast<Address>(taken);
+            if (b == 0) break;
+        }
+        next = q;
+        return "        DC.B     " + items;
+    };
+
     Address a = from;
     bool cut = false;
     while (a < to) {
@@ -235,32 +270,14 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                         break;
                     }
                     case DataKind::Text: {
-                        std::size_t used = 0;
-                        std::size_t room = std::min<std::size_t>(60, end - p);
-                        for (std::size_t i = 1; i < room; ++i)
-                            if (names.count(p + static_cast<Address>(i))) {
-                                room = i;
-                                break;
-                            }
-                        std::string lit = textLine(p, room, used);
-                        if (used < 2) lit = "";  // one character is written as a number
-                        if (lit.empty()) {
-                            body << dcBytes(p, 1) << "\n";
-                            p += 1;
-                        } else {
-                            Address next = p + static_cast<Address>(used);
-                            std::string line = "        DC.B     " + lit;
-                            if (next < end && view.read8(next) == 0 && !names.count(next)) {   // the terminator belongs on the same line
-                                line += ",0";
-                                ++next;
-                                if (next < end && view.read8(next) == 0 && (next & 1U) != 0 && !names.count(next)) {   // padding byte at an odd address: EVEN writes it
-                                    line += "\n        EVEN";
-                                    ++next;
-                                }
-                            }
-                            body << line << "\n";
-                            p = next;
+                        Address next = p;
+                        std::string line = textStatement(p, end, [&](Address x) { return names.count(x) != 0; }, next);
+                        if (next < end && view.read8(next) == 0 && (next & 1U) != 0 && !names.count(next) && view.read8(next - 1) == 0) {
+                            line += "\n        EVEN";   // a padding byte behind the terminator at an odd address: EVEN writes it
+                            ++next;
                         }
+                        body << line << "\n";
+                        p = next;
                         break;
                     }
                 }
@@ -352,14 +369,8 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                     break;
                 }
             if (n >= 4) {
-                std::size_t u2 = 0;
-                std::string text = textLine(a, n, u2);
-                std::string line = "        DC.B     " + text;
-                Address next = a + static_cast<Address>(u2);
-                if (next < to && view.read8(next) == 0 && !isBoundary(next)) {
-                    line += ",0";
-                    ++next;
-                }
+                Address next = a;
+                const std::string line = textStatement(a, to, [&](Address x) { return isBoundary(x); }, next);
                 body << line << "\n";
                 a = next;
                 continue;
