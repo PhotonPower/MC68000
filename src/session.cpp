@@ -88,6 +88,7 @@ Json Session::Impl::run() {
     if (cmd == "set") return cmdSet();
     if (cmd == "step" || cmd == "step_over" || cmd == "run" || cmd == "run_until_return") return cmdStep();
     if (cmd == "call") return cmdCall();
+    if (cmd == "track_writes" || cmd == "written" || cmd == "run_until_unpacked" || cmd == "save_memory") return cmdUnpack(cmd);
     if (cmd == "break") {
         const Address a = address("addr");
         cpu.addBreakpoint(a);
@@ -160,7 +161,7 @@ Json Session::Impl::run() {
 Json Session::Impl::cmdHelp() {
     static const char* names[] = {
         "help", "machine", "reset", "asm", "dis", "read", "write", "load_file", "load_rom", "regs", "set", "step", "step_over",
-        "run", "run_until_return", "call", "break", "unbreak", "breaks", "clear_breaks", "watch", "unwatch", "checkpoint",
+        "run", "run_until_return", "call", "track_writes", "written", "run_until_unpacked", "save_memory", "break", "unbreak", "breaks", "clear_breaks", "watch", "unwatch", "checkpoint",
         "rollback", "drop", "checkpoints", "diff", "state", "set_state", "save_state", "load_state", "interrupt", "io", "libcalls", "console", "symbols",
         "libcalls", "console", "analyze", "jump_tables", "data_regions", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data", "ann_comment", "ann_remove",
         "ann_title", "ann_list", "ann_save", "ann_load"};
@@ -429,6 +430,94 @@ Json Session::Impl::cmdSet() {
     for (const auto& [name, v] : regs.members()) setRegister(name, number(v));
     Json j = Json::object();
     j.set("regs", regsJson());
+    return j;
+}
+
+// ---- self-extracting programs: which memory did the program write, and where does it jump into it ------------------------------------------------------
+Json Session::Impl::cmdUnpack(const std::string& cmd) {
+    Memory& mem = *s.memory_;
+    Cpu& cpu = *s.cpu_;
+    auto rangesJson = [&](std::size_t minLength, std::size_t most) {
+        auto ranges = mem.writtenRanges(minLength);
+        std::stable_sort(ranges.begin(), ranges.end(), [](const auto& a, const auto& b) { return a.second - a.first > b.second - b.first; });
+        Json arr = Json::array();
+        for (std::size_t i = 0; i < ranges.size() && i < most; ++i) {
+            Json e = Json::object();
+            e.set("start", hexAddr(ranges[i].first)).set("end", hexAddr(ranges[i].second)).set("size", static_cast<std::int64_t>(ranges[i].second - ranges[i].first));
+            arr.push(e);
+        }
+        return arr;
+    };
+    if (cmd == "track_writes") {
+        const bool on = flag("on", true);
+        if (on && (flag("clear", true) || !mem.tracking())) mem.trackWrites(true);
+        if (!on) mem.trackWrites(false);
+        s.unpackIgnore_.clear();
+        s.lastUnpackHit_.reset();
+        Json j = Json::object();
+        j.set("tracking", mem.tracking());
+        return j;
+    }
+    if (cmd == "written") {
+        Json j = Json::object();
+        j.set("tracking", mem.tracking()).set("bytes", static_cast<std::int64_t>(mem.writtenBytes()));
+        const std::int64_t minLength = arg("min_length") ? number(need("min_length")) : 16;
+        const std::int64_t most = arg("limit") ? number(need("limit")) : 20;
+        j.set("ranges", rangesJson(static_cast<std::size_t>(std::max<std::int64_t>(1, minLength)), static_cast<std::size_t>(std::clamp<std::int64_t>(most, 1, 200))));
+        return j;
+    }
+    if (cmd == "save_memory") {
+        requireFiles("save_memory");
+        const Address a = address("addr");
+        const std::int64_t len = number(need("len"));
+        if (len < 1 || len > 0x1000000) throw SessionError("len must be 1..16777216");
+        const std::string file = str("file");
+        writeBinaryFile(file, mem.readBytes(a, static_cast<std::size_t>(len)));
+        Json j = Json::object();
+        j.set("file", file).set("addr", hexAddr(a)).set("bytes", len);
+        return j;
+    }
+    // run_until_unpacked
+    const std::int64_t minWritten = arg("min_written") ? number(need("min_written")) : 4096;
+    if (minWritten < 1) throw SessionError("min_written must be at least 1");
+    if (!flag("continue") || !mem.tracking()) {
+        mem.trackWrites(true);
+        s.unpackIgnore_.clear();
+        s.lastUnpackHit_.reset();
+    } else if (s.lastUnpackHit_) {
+        s.unpackIgnore_.push_back(*s.lastUnpackHit_);   // the stage that was seen last does not count again
+    }
+    std::vector<std::pair<Address, Address>> ignore = s.unpackIgnore_;
+    if (s.os_) ignore.push_back(s.os_->systemRange());
+    if (const Json* extra = arg("ignore")) {
+        if (!extra->isArray()) throw SessionError("ignore must be a list of [first, end] pairs");
+        for (const Json& pair : extra->items()) {
+            if (!pair.isArray() || pair.items().size() != 2) throw SessionError("ignore must be a list of [first, end] pairs");
+            ignore.emplace_back(address(pair.items()[0]), address(pair.items()[1]));
+        }
+    }
+    const std::uint64_t n = arg("max_instructions") ? limit() : std::uint64_t{50000000};
+    const std::uint64_t exBefore = cpu.exceptionCount();
+    s.applyWatches();
+    EmptyFetchGuard guard(*this);
+    cpu.watchWrittenCode(true, static_cast<std::size_t>(minWritten), ignore);
+    const RunResult r = cpu.run(n);
+    cpu.watchWrittenCode(false);
+    Json j = runReply(r, exBefore);
+    guard.report(j);
+    if (r.reason == StopReason::WrittenCode) {
+        const Address pc = cpu.registers().pc & kAddressMask;
+        for (const auto& [first, end] : mem.writtenRanges(1))
+            if (pc >= first && pc < end) {
+                s.lastUnpackHit_ = std::make_pair(first, end);
+                Json region = Json::object();
+                region.set("start", hexAddr(first)).set("end", hexAddr(end)).set("size", static_cast<std::int64_t>(end - first));
+                j.set("region", region);
+                break;
+            }
+    }
+    j.set("written_bytes", static_cast<std::int64_t>(mem.writtenBytes()));
+    j.set("ranges", rangesJson(64, 8));
     return j;
 }
 

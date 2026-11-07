@@ -70,6 +70,12 @@ Die Ausgabe ist **nicht an einem echten Amiga erprobt**. Gegengeprüft wird sie 
 den eigenen Lader und den Emulator (das Programm rechnet mit den relokierten Zeigern) und mit 400 **Zufallsprogrammen**, die einmal als Hunk (geladen an `$20000`) und einmal absolut
 mit denselben Adressen assembliert werden – die Speicherabbilder müssen übereinstimmen (`tests/test_hunk_write.cpp`).
 
+## Amiga-Diskettenabbilder (ADF)
+
+Gelesen, nicht geschrieben (`m68k::AdfImage`, `m68ktool adf`): 880 KiB (DD) und 1760 KiB (HD) mit 512-Byte-Blöcken. Bootblock `DOS\0`…`DOS\7` (Bit 0: FFS, Bit 1: internationale Namen, Bit 2: Verzeichnis-Cache), Wurzelblock bei 880 (HD: 1760) mit der Hash-Tabelle (72 Einträge, Hash über den Namen in Großbuchstaben),
+Dateikopf-, Erweiterungs- und Datenblöcke (OFS: 24 Byte Kopf je Datenblock; FFS: reine Daten), Prüfsummen. Namen werden ohne Beachtung der Groß-/Kleinschreibung verglichen. Beschädigte Platten melden `problems()`, das Lesen läuft weiter, soweit es geht; harte Fehler sind `IoError`.
+Disketten mit eigenem Lader (kein `DOS`-Bootblock) werden akzeptiert: `isDos()` ist dann falsch, Bootblock und Blöcke sind lesbar. Geprüft gegen `xdftool` (`tools/crosscheck_adf.py`, in der CI).
+
 ## Systemabbilder
 
 Kickstart-ROM-Abbilder (256 KiB, vom Benutzer bereitgestellt) und andere ROM-Abbilder werden nur als Raw-Binary geladen (z. B. an eine

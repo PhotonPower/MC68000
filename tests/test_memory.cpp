@@ -58,5 +58,45 @@ int main() {
     CHECK(Memory::isAligned(0x1000));
     CHECK(!Memory::isAligned(0x1001));
 
+    // ---- which bytes were written -------------------------------------------------------------------------------------------------------------------
+    {
+        Memory m;
+        m.write8(0x100, 1);                          // before tracking: not recorded
+        CHECK(!m.tracking());
+        CHECK(!m.written(0x100));
+        m.trackWrites(true);
+        CHECK(m.tracking());
+        CHECK_EQ(m.writtenBytes(), std::size_t{0});
+        m.write8(0x2000, 7);
+        m.write16(0x2001, 0x1234);                    // 0x2001 and 0x2002
+        m.write32(0x3000, 0xDEADBEEF);
+        m.write8(0x3000, 0xAA);                       // the same byte again does not count twice
+        CHECK(m.written(0x2000) && m.written(0x2001) && m.written(0x2002) && !m.written(0x2003));
+        CHECK_EQ(m.writtenBytes(), std::size_t{7});
+        m.write8(0x1000000 + 0x10, 5);                // the address wraps at 16 MiB
+        CHECK(m.written(0x10));
+        const auto ranges = m.writtenRanges();
+        CHECK_EQ(ranges.size(), std::size_t{3});
+        CHECK(ranges[0] == std::make_pair(Address{0x10}, Address{0x11}));
+        CHECK(ranges[1] == std::make_pair(Address{0x2000}, Address{0x2003}));
+        CHECK(ranges[2] == std::make_pair(Address{0x3000}, Address{0x3004}));
+        CHECK_EQ(m.writtenRanges(3).size(), std::size_t{2});     // at least 3 consecutive bytes
+        m.write8(0xFFFFFF, 1);                        // the last byte of the address space ends a range at 16 MiB
+        CHECK(m.writtenRanges().back() == std::make_pair(Address{0xFFFFFF}, Address{0x1000000}));
+        m.clearWritten();
+        CHECK_EQ(m.writtenBytes(), std::size_t{0});
+        CHECK(!m.written(0x2000));
+        CHECK(m.read8(0x2000) == 7);                  // the memory itself is untouched
+        m.write8(0x4000, 1);
+        m.clear();                                    // clearing the memory forgets what was written, too
+        CHECK_EQ(m.writtenBytes(), std::size_t{0});
+        CHECK(m.tracking());
+        m.trackWrites(false);
+        CHECK(!m.tracking());
+        m.write8(0x5000, 1);
+        CHECK(!m.written(0x5000));
+        CHECK(m.writtenRanges().empty());
+    }
+
     return finish("memory");
 }

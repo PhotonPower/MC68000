@@ -52,6 +52,7 @@ add_library(m68kcore STATIC
   src/expression.cpp
   src/forms.cpp
   src/hunk.cpp
+  src/adf.cpp
   src/format.cpp
   src/image_io.cpp
   src/listing.cpp

@@ -70,6 +70,8 @@ private:
     std::unique_ptr<Amiga500> amiga_;  // null = generic machine
     std::unique_ptr<AmigaOs> os_;      // null = no emulated library calls
     std::vector<HunkInfo> hunks_;      // the hunks of the program loaded last (empty for other images): boundaries in the listing
+    std::vector<std::pair<Address, Address>> unpackIgnore_;   // stages of an unpacker that run_until_unpacked has seen already
+    std::optional<std::pair<Address, Address>> lastUnpackHit_;
     std::map<std::string, std::int64_t> symbols_;
     std::map<std::string, Checkpoint> checkpoints_;
     std::vector<Watch> watches_;

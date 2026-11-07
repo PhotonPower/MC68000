@@ -80,8 +80,10 @@ public:
     struct State {
         bool overlay = true;
         std::vector<Byte> custom, cia;
+        unsigned beamH = 0, beamV = 0;   ///< where the video beam is (see below)
+        bool longFrame = false;
     };
-    [[nodiscard]] State state() const { return {overlay_, custom_, cia_}; }
+    [[nodiscard]] State state() const { return {overlay_, custom_, cia_, beamH_, beamV_, lof_}; }
     void setState(const State& s);
 
     // for the processor hooks
@@ -90,6 +92,11 @@ public:
 
 private:
     void updateOverlay();
+    void advanceBeam();
+    // The video beam is not emulated, but a program that waits for a raster line (a loop around VHPOSR, as unpackers use for their colour effects) must
+    // not wait for ever: every read of VHPOSR moves the beam on by 32 colour clocks, so a line comes round after 8 reads and a frame (312 lines) after 2500.
+    unsigned beamH_ = 0, beamV_ = 0;
+    bool lof_ = false;
 
     Memory& mem_;
     AmigaConfig config_;

@@ -62,6 +62,8 @@ public:
     void prepareProgram(Cpu& cpu);
 
     [[nodiscard]] Address execBase() const { return osBase_ + 0xE00; }
+    /// [first, end) of the memory that the emulated system keeps its own structures in (ExecBase, library bases with their jump tables, the task).
+    [[nodiscard]] std::pair<Address, Address> systemRange() const { return {osBase_, osBase_ + 0x6000}; }
     [[nodiscard]] Address stackTop() const { return osBase_ - 16; }
     [[nodiscard]] Address heapBase() const { return heapBase_; }
     [[nodiscard]] Address heapEnd() const { return heapEnd_; }

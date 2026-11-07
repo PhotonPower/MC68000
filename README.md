@@ -112,6 +112,7 @@ Voraussetzungen: CMake ≥ 3.16, C++20-Compiler (GCC ≥ 11, Clang ≥ 14, MSVC 
 | [docs/monitor.md](docs/monitor.md)                       | Monitor: Befehle und Beispiel                           |
 | [docs/agent-protocol.md](docs/agent-protocol.md)         | JSON-Protokoll für LLM-Agenten                          |
 | [docs/walkthrough.md](docs/walkthrough.md)               | Anleitung: vom Programm zum kommentierten Listing     |
+| [docs/unpacking.md](docs/unpacking.md)                   | Selbstentpackende Programme und ADF-Disketten         |
 | [docs/reverse-engineering.md](docs/reverse-engineering.md) | Programme mit einem lokalen Modell kommentieren       |
 | [docs/testing.md](docs/testing.md)                       | Teststrategie und Kreuzprüfung                          |
 | [docs/roadmap.md](docs/roadmap.md)                       | Meilensteine und offene Fragen                          |

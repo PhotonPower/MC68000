@@ -341,6 +341,102 @@ int main() {
         CHECK(regOf(r2, "D6") != "0x00000000");
     }
 
+    // ---- the video beam: a program that waits for a raster line comes through ------------------------------------------------------------------------------
+    {
+        Session s;
+        call(s, "{\"cmd\":\"machine\",\"type\":\"amiga500\"}");
+        CHECK(ok(load(s, "        ORG $20000\nstart:  MOVE.W $DFF006,D1\n        MOVE.W $DFF006,D2\n        MOVE.W $DFF006,D3\n        MOVE.W $DFF004,D4\n"
+                         "wait:   CMP.B #$80,$DFF006\n        BNE.S wait\n        MOVEQ #1,D7\n        STOP #$2700\n")));
+        CHECK(ok(call(s, "{\"cmd\":\"checkpoint\",\"name\":\"c1\"}")));
+        const Json r = call(s, "{\"cmd\":\"step\",\"n\":4}");
+        CHECK_EQ(regOf(r, "D1"), std::string("0x00000000"));          // line 0, colour clock 0
+        CHECK_EQ(regOf(r, "D2"), std::string("0x00000020"));          // each read of VHPOSR moves the beam on by 32 colour clocks
+        CHECK_EQ(regOf(r, "D3"), std::string("0x00000040"));
+        CHECK_EQ(regOf(r, "D4"), std::string("0x00000000"));          // VPOSR: line 0 is in the first 256, a short frame
+        const Json done = call(s, "{\"cmd\":\"run\",\"max_instructions\":20000}");
+        CHECK_EQ(str(done, "stop"), std::string("stopped"));           // the loop for line $80 ended: STOP was reached
+        CHECK_EQ(regOf(done, "D7"), std::string("0x00000001"));
+        // a rollback puts the beam back (a run must not depend on how often something was read before)
+        CHECK(ok(call(s, "{\"cmd\":\"rollback\",\"name\":\"c1\"}")));
+        const Json again = call(s, "{\"cmd\":\"step\",\"n\":2}");
+        CHECK_EQ(regOf(again, "D1"), std::string("0x00000000"));
+        CHECK_EQ(regOf(again, "D2"), std::string("0x00000020"));
+        // beyond line 255 VPOSR has the ninth bit; after 312 lines the frame is over and the long-frame flag toggles. A read of VHPOSR moves the beam
+        // 32 clocks on, a line has 228: n reads make floor(32 n / 228) lines.
+        for (const auto& [reads, expected] : {std::pair<int, const char*>{2000, "0x00000001"}, {2300, "0x00008000"}}) {
+            Session t;
+            call(t, "{\"cmd\":\"machine\",\"type\":\"amiga500\"}");
+            CHECK(ok(load(t, "        ORG $20000\nstart:  MOVE.W #" + std::to_string(reads - 1) + ",D5\nl:      MOVE.W $DFF006,D1\n        DBRA D5,l\n        MOVE.W $DFF004,D2\n        STOP #$2700\n")));
+            const Json r2 = call(t, "{\"cmd\":\"run\",\"max_instructions\":20000}");
+            CHECK_EQ(regOf(r2, "D2"), std::string(expected));
+        }
+    }
+
+    // ---- self-extracting programs: run until the program jumps into memory it has written -------------------------------------------------------------
+    {
+        // writes 70 NOPs and an RTS to $3000 and jumps there
+        const std::string prog =
+            "        ORG $20000\nstart:  LEA $30000,A0\n        MOVEQ #69,D0\n.l:     MOVE.W #$4E71,(A0)+\n        DBRA D0,.l\n        MOVE.W #$4E75,(A0)+\n        JMP $30000\n";
+        SessionOptions opt;
+        opt.allowFiles = true;
+        Session s(opt);
+        call(s, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        CHECK(ok(load(s, prog)));
+        const Json hit = call(s, "{\"cmd\":\"run_until_unpacked\",\"min_written\":100}");
+        CHECK(ok(hit));
+        CHECK_EQ(str(hit, "stop"), std::string("unpacked"));
+        CHECK_EQ(str(hit, "pc"), std::string("0x030000"));
+        CHECK_EQ(str(*hit.find("region"), "start"), std::string("0x030000"));
+        CHECK_EQ(hit.find("region")->find("size")->asInt(), std::int64_t{142});          // 70 words and the RTS
+        CHECK(hit.find("written_bytes")->asInt() >= 142);
+        const Json w = call(s, "{\"cmd\":\"written\",\"min_length\":16}");
+        CHECK_EQ(w.find("ranges")->items().size(), std::size_t{1});
+        CHECK_EQ(str(w.find("ranges")->items()[0], "start"), std::string("0x030000"));
+        // too little written for the threshold: the program runs on (it returns to the system through the RTS)
+        Session t;
+        call(t, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        CHECK(ok(load(t, prog)));
+        const Json no = call(t, "{\"cmd\":\"run_until_unpacked\",\"min_written\":1000}");
+        CHECK_EQ(str(no, "stop"), std::string("exit"));
+        // an ignored range does not count, and `continue` ignores the stage that was seen last
+        Session u;
+        call(u, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        CHECK(ok(load(u, prog)));
+        const Json ign = call(u, "{\"cmd\":\"run_until_unpacked\",\"min_written\":100,\"ignore\":[[\"0x30000\",\"0x30100\"]]}");
+        CHECK_EQ(str(ign, "stop"), std::string("exit"));
+        CHECK(!ok(call(u, "{\"cmd\":\"run_until_unpacked\",\"ignore\":[[1]]}")));
+        CHECK(!ok(call(u, "{\"cmd\":\"run_until_unpacked\",\"min_written\":0}")));
+        CHECK(ok(load(s, prog)));
+        CHECK_EQ(str(call(s, "{\"cmd\":\"run_until_unpacked\",\"min_written\":100}"), "stop"), std::string("unpacked"));
+        const Json next = call(s, "{\"cmd\":\"run_until_unpacked\",\"min_written\":100,\"continue\":true}");
+        CHECK_EQ(str(next, "stop"), std::string("exit"));                                  // the NOPs and the RTS are the stage that was seen: it does not stop again
+        // save_memory: the unpacked bytes, as a file
+        CHECK(ok(load(s, prog)));
+        CHECK_EQ(str(call(s, "{\"cmd\":\"run_until_unpacked\",\"min_written\":100}"), "stop"), std::string("unpacked"));
+        CHECK(ok(call(s, "{\"cmd\":\"save_memory\",\"addr\":\"0x30000\",\"len\":142,\"file\":\"m68k_unpack_test.tmp\"}")));
+        const std::vector<Byte> saved = readBinaryFile("m68k_unpack_test.tmp");
+        std::remove("m68k_unpack_test.tmp");
+        CHECK_EQ(saved.size(), std::size_t{142});
+        CHECK_EQ(saved[0], Byte{0x4E});
+        CHECK_EQ(saved[1], Byte{0x71});
+        CHECK_EQ(saved[140], Byte{0x4E});
+        CHECK_EQ(saved[141], Byte{0x75});
+        CHECK(!ok(call(s, "{\"cmd\":\"save_memory\",\"addr\":\"0x30000\",\"len\":0,\"file\":\"x\"}")));
+        // without --allow-files no file is written
+        Session plain;
+        call(plain, "{\"cmd\":\"machine\",\"type\":\"amiga500\"}");
+        CHECK(!ok(call(plain, "{\"cmd\":\"save_memory\",\"addr\":\"0x30000\",\"len\":4,\"file\":\"m68k_must_not_exist.tmp\"}")));
+        // the calls of the emulated system write library jump tables: that is not "code that the program wrote"
+        Session lib;
+        call(lib, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        CHECK(ok(load(lib, "        ORG $20000\nstart:  MOVEA.L 4.W,A6\n        LEA dos(PC),A1\n        MOVEQ #0,D0\n        JSR -552(A6)\n        MOVEA.L D0,A6\n        JSR -60(A6)\n"
+                           "        MOVEQ #0,D0\n        RTS\ndos:    DC.B \"dos.library\",0\n")));
+        CHECK_EQ(str(call(lib, "{\"cmd\":\"run_until_unpacked\",\"min_written\":1}"), "stop"), std::string("exit"));
+        // the first instruction of a run is not checked (a run goes on from a stop)
+        CHECK(ok(call(s, "{\"cmd\":\"track_writes\",\"on\":false}")));
+        CHECK(!call(s, "{\"cmd\":\"written\"}").find("tracking")->asBool());
+    }
+
     // ---- state: checkpoints cover the OS, the stop is a protocol answer, the options ----------------------------------------------------
     {
         Session s;

@@ -55,6 +55,8 @@ jobs:
         run: python3 tools/crosscheck_objdump.py build/m68k_dump_forms 0 3
       - name: Assembler against GNU as
         run: python3 tools/crosscheck_gas.py build/m68ktool
+      - name: Disk image reader against amitools' xdftool (random OFS/FFS disks)
+        run: pip install amitools && python3 tools/crosscheck_adf.py build/m68ktool 20
 
   emulator-diff:
     name: Emulator against Musashi

@@ -3,6 +3,7 @@
 //   m68ktool asm <source.s> [options]     assembler
 //   m68ktool dis <image>    [options]     disassembler
 //   m68ktool monitor [image] [options]    machine-code monitor
+//   m68ktool adf <info|ls|extract|boot|block> <disk.adf> ...   read an Amiga floppy disk image
 //   m68ktool serve [--allow-files]        emulator server (JSON lines)
 //   m68ktool help | version
 //
@@ -17,12 +18,15 @@
 #endif
 
 #include <algorithm>
+#include <optional>
+#include <cstdio>
 #include <iostream>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "m68k/adf.hpp"
 #include "m68k/assembler.hpp"
 #include "m68k/disassembler.hpp"
 #include "m68k/expression.hpp"
@@ -50,6 +54,11 @@ void printUsage(std::ostream& out) {
         << "  m68ktool asm <source.s> [options]\n"
         << "  m68ktool dis <image>    [options]\n"
         << "  m68ktool monitor [image] [--org <hex>] [--amiga] [--no-files]   interactive machine-code monitor\n"
+        << "  m68ktool adf info <disk.adf>                      boot block, file system, disk name\n"
+        << "  m68ktool adf ls <disk.adf> [path] [-R]            list a directory (-R: everything below it)\n"
+        << "  m68ktool adf extract <disk.adf> <path> -o <file>  copy a file out of the disk\n"
+        << "  m68ktool adf boot <disk.adf> -o <file>            the two boot blocks (1024 bytes)\n"
+        << "  m68ktool adf block <disk.adf> <n> [-o <file>]     block n (512 bytes; a hex dump without -o)\n"
         << "  m68ktool serve [--allow-files]   emulator server: JSON requests on stdin, replies on stdout\n"
         << "  m68ktool help | version\n"
         << "\n"
@@ -309,6 +318,111 @@ int cmdMonitor(Args args) {
     return kExitOk;
 }
 
+// ---- m68ktool adf ----------------------------------------------------------------------------------------------------------------------------------
+
+std::string adfKindText(const m68k::AdfEntry& e) {
+    switch (e.kind) {
+        case m68k::AdfEntry::Kind::Directory: return "<dir>";
+        case m68k::AdfEntry::Kind::SoftLink: return "<soft link>";
+        case m68k::AdfEntry::Kind::HardLink: return "<link>";
+        case m68k::AdfEntry::Kind::Other: return "<?>";
+        default: return std::to_string(e.size);
+    }
+}
+
+int cmdAdf(Args args) {
+    if (args.done()) throw UsageError("adf needs a subcommand: info, ls, extract, boot or block");
+    const std::string sub = args.next();
+    std::string image, path, outFile;
+    bool recursive = false;
+    std::vector<std::string> positional;
+    while (!args.done()) {
+        const std::string a = args.next();
+        if (a == "-o") outFile = args.value(a);
+        else if (a == "-R") recursive = true;
+        else if (a.size() > 1 && a[0] == '-') throw UsageError("unknown option " + a);
+        else positional.push_back(a);
+    }
+    if (positional.empty()) throw UsageError("adf " + sub + " needs the disk image");
+    image = positional[0];
+    const m68k::AdfImage disk(m68k::readBinaryFile(image));
+    auto reportProblems = [&] {
+        for (const std::string& p : disk.problems()) std::cerr << "warning: " << p << "\n";
+    };
+    if (sub == "info") {
+        std::cout << image << ": " << disk.blocks() << " blocks (" << disk.blocks() / 2 << " KiB)\n";
+        std::cout << "boot block: " << disk.bootDescription() << ", checksum " << (disk.bootChecksumOk() ? "valid" : "not valid (a custom boot block need not have one)") << "\n";
+        if (!disk.isDos()) {
+            std::cout << "There is no AmigaDOS file system on this disk: it probably carries its own loader (a trackloader). `adf boot` writes the boot block,\n"
+                         "`adf block <n>` any block; the program itself has to be found by reading the boot block's code.\n";
+            return kExitOk;
+        }
+        std::cout << "root block: " << disk.rootBlock() << (disk.rootValid() ? "" : " (NOT valid)") << ", disk name: \"" << disk.diskName() << "\"\n";
+        const std::vector<m68k::AdfEntry> all = disk.listAll();
+        std::size_t files = 0, dirs = 0;
+        std::uint64_t bytes = 0;
+        for (const m68k::AdfEntry& e : all) {
+            if (e.kind == m68k::AdfEntry::Kind::File) ++files, bytes += e.size;
+            else if (e.kind == m68k::AdfEntry::Kind::Directory) ++dirs;
+        }
+        std::cout << files << " files, " << dirs << " directories, " << bytes << " bytes\n";
+        reportProblems();
+        return kExitOk;
+    }
+    if (sub == "ls") {
+        if (!disk.isDos()) throw UsageError(image + ": no AmigaDOS file system (see `adf info`)");
+        const std::string dir = positional.size() > 1 ? positional[1] : "";
+        const std::vector<m68k::AdfEntry> entries = recursive ? disk.listAll(dir) : disk.list(dir);
+        if (entries.empty() && !dir.empty() && !disk.find(dir)) throw UsageError("no such directory: " + dir);
+        for (const m68k::AdfEntry& e : entries) {
+            std::string line = std::string(std::max<int>(0, 12 - static_cast<int>(adfKindText(e).size())), ' ') + adfKindText(e) + "  " + (recursive ? e.path : e.name);
+            if (!e.comment.empty()) line += "   ; " + e.comment;
+            std::cout << line << "\n";
+        }
+        reportProblems();
+        return kExitOk;
+    }
+    if (sub == "extract") {
+        if (positional.size() < 2) throw UsageError("adf extract needs the path of a file");
+        if (outFile.empty()) throw UsageError("adf extract needs -o <file>");
+        const std::optional<m68k::AdfEntry> e = disk.find(positional[1]);
+        if (!e) throw UsageError("no such file on the disk: " + positional[1] + " (adf ls -R shows what there is)");
+        const std::vector<m68k::Byte> bytes = disk.readFile(*e);
+        m68k::writeBinaryFile(outFile, bytes);
+        std::cout << e->path << ": " << bytes.size() << " bytes written to " << outFile << "\n";
+        reportProblems();
+        return kExitOk;
+    }
+    if (sub == "boot") {
+        if (outFile.empty()) throw UsageError("adf boot needs -o <file>");
+        m68k::writeBinaryFile(outFile, disk.bootBlock());
+        std::cout << "boot block: 1024 bytes written to " << outFile << " (" << disk.bootDescription() << ")\n";
+        return kExitOk;
+    }
+    if (sub == "block") {
+        if (positional.size() < 2) throw UsageError("adf block needs a block number");
+        const m68k::Address n = parseAddress(positional[1], "block number");
+        const std::vector<m68k::Byte> b = disk.block(n);
+        if (!outFile.empty()) {
+            m68k::writeBinaryFile(outFile, b);
+            std::cout << "block " << n << ": 512 bytes written to " << outFile << "\n";
+            return kExitOk;
+        }
+        for (std::size_t i = 0; i < b.size(); i += 16) {
+            char line[96];
+            int len = std::snprintf(line, sizeof line, "%04zX  ", i);
+            std::string text;
+            for (std::size_t k = 0; k < 16; ++k) {
+                len += std::snprintf(line + len, sizeof line - static_cast<std::size_t>(len), "%02X ", b[i + k]);
+                text += (b[i + k] >= 0x20 && b[i + k] < 0x7F) ? static_cast<char>(b[i + k]) : '.';
+            }
+            std::cout << line << " " << text << "\n";
+        }
+        return kExitOk;
+    }
+    throw UsageError("unknown adf subcommand '" + sub + "' (info, ls, extract, boot, block)");
+}
+
 int cmdServe(Args args) {
     m68k::SessionOptions opt;
     while (!args.done()) {
@@ -345,6 +459,7 @@ int main(int argc, char** argv) {
         }
         if (command == "asm") return cmdAsm(Args(argc, argv));
         if (command == "dis") return cmdDis(Args(argc, argv));
+        if (command == "adf") return cmdAdf(Args(argc, argv));
         if (command == "serve") return cmdServe(Args(argc, argv));
         if (command == "monitor") return cmdMonitor(Args(argc, argv));
         std::cerr << "m68ktool: unknown command '" << command << "'\n\n";

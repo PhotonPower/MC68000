@@ -61,6 +61,7 @@ inline const char* stopName(StopReason r) {
         case StopReason::Watchpoint: return "watchpoint";
         case StopReason::Reached: return "address";
         case StopReason::Returned: return "returned";
+        case StopReason::WrittenCode: return "unpacked";
         case StopReason::Stopped: return "stopped";
         case StopReason::Halted: return "halted";
         case StopReason::Requested: return "exit";
@@ -273,6 +274,7 @@ struct Session::Impl {
     Json cmdLoadFile();
     Json cmdSet();
     Json cmdStep();
+    Json cmdUnpack(const std::string& cmd);
     Json cmdCall();
     Json cmdBreaks();
     Json cmdWatch(bool add);

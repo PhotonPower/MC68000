@@ -46,6 +46,7 @@ enum class StopReason {
     Watchpoint,  ///< the last instruction touched a watched address
     Reached,     ///< pc reached the requested address
     Returned,    ///< the call depth dropped below its starting value (RTS/RTR/RTE)
+    WrittenCode, ///< pc is in memory that the program itself has written (see Cpu::watchWrittenCode); the instruction there has not run
     Stopped,     ///< STOP instruction: waiting for an interrupt
     Halted,      ///< double fault: the processor has stopped
     Requested    ///< an execute hook asked to stop (see Cpu::stopMessage(), e.g. the program called Exit())
@@ -121,6 +122,18 @@ public:
     void addBreakpoint(Address a) { breakpoints_.insert(a & kAddressMask); }
     void removeBreakpoint(Address a) { breakpoints_.erase(a & kAddressMask); }
     void clearBreakpoints() { breakpoints_.clear(); }
+    /// Stops a run in front of an instruction that lies in memory the program has written (memory must be tracking its writes, Memory::trackWrites),
+    /// if the run of written bytes around it is at least `minBytes` long: the sign that a self-extracting program has unpacked its code and jumps into it.
+    /// (A small written run is a piece of the unpacker that was copied somewhere else; it does not count. It is the size of the run the program
+    /// executes in that matters, not how much was written altogether: the unpacker keeps running from its copy while it writes the program.)
+    /// `ignore` are ranges [first, end) that do not count (the system's own structures, a stage of the unpacker that was already seen).
+    /// The first instruction of a run is never checked, so that a run that goes on from a stop moves past it. `off` = no watch.
+    void watchWrittenCode(bool on, std::size_t minBytes = 4096, std::vector<std::pair<Address, Address>> ignore = {}) {
+        watchWritten_ = on;
+        watchMin_ = minBytes;
+        watchIgnore_ = std::move(ignore);
+        watchSmall_.clear();
+    }
     [[nodiscard]] const std::set<Address>& breakpoints() const { return breakpoints_; }
 
     /// Watches [start, start+length) for reads and/or writes; run() stops after the instruction.
@@ -186,6 +199,14 @@ private:
     std::set<Address> breakpoints_;
     std::vector<Watch> watches_;
     bool watchHit_ = false;
+    bool watchWritten_ = false;
+    std::size_t watchMin_ = 4096;
+    std::vector<std::pair<Address, Address>> watchIgnore_;
+    struct SmallRun {   // a written run that was found too small, and how much had been written when that was looked at
+        Address first, end;
+        std::size_t writtenThen;
+    };
+    std::vector<SmallRun> watchSmall_;
     Address watchAddress_ = 0;
     bool halted_ = false, stopped_ = false;
     bool stopRequested_ = false;

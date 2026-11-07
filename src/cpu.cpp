@@ -1319,6 +1319,23 @@ RunResult Cpu::runLoop(std::uint64_t maxInstructions, std::optional<Address> unt
                 return out;
             }
         }
+        if (i > 0 && watchWritten_ && mem_.written(r_.pc)) {
+            const Address pc = r_.pc & kAddressMask;
+            bool ignored = false;
+            for (const auto& [first, end] : watchIgnore_) ignored = ignored || (pc >= first && pc < end);
+            // a run that was found too small is not measured again at every instruction of a loop: only after another `watchMin_` bytes were written
+            for (const SmallRun& small : watchSmall_)
+                ignored = ignored || (pc >= small.first && pc < small.end && mem_.writtenBytes() < small.writtenThen + watchMin_);
+            if (!ignored) {
+                const auto [first, end] = mem_.writtenRunAround(pc, watchMin_);
+                if (end - first >= watchMin_) {
+                    out.reason = StopReason::WrittenCode;
+                    return out;
+                }
+                watchSmall_.erase(std::remove_if(watchSmall_.begin(), watchSmall_.end(), [&](const SmallRun& r) { return r.first < end && first < r.end; }), watchSmall_.end());
+                watchSmall_.push_back({first, end, mem_.writtenBytes()});
+            }
+        }
         const StepResult s = step();
         if (s.reason == StopReason::Halted || s.reason == StopReason::Stopped) {
             out.reason = s.reason;

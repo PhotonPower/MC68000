@@ -35,6 +35,8 @@ void Amiga500::reset(Cpu& cpu) {
     std::fill(custom_.begin(), custom_.end(), Byte{0});
     std::fill(cia_.begin(), cia_.end(), Byte{0});
     overlay_ = true;
+    beamH_ = beamV_ = 0;
+    lof_ = false;
     Registers& r = cpu.registers();
     r.sr = 0x2700;
     r.inactiveSp = 0;
@@ -94,6 +96,9 @@ void Amiga500::setState(const State& s) {
     overlay_ = s.overlay;
     if (s.custom.size() == custom_.size()) custom_ = s.custom;
     if (s.cia.size() == cia_.size()) cia_ = s.cia;
+    beamH_ = s.beamH;
+    beamV_ = s.beamV;
+    lof_ = s.longFrame;
 }
 
 bool Amiga500::read(Address a, Size s, Long& value) {
@@ -103,9 +108,33 @@ bool Amiga500::read(Address a, Size s, Long& value) {
                        !(overlay() && a < kOverlayWindow);
     if (plain) return false;  // ordinary memory
     Long v = 0;
+    if (first == Region::Custom && a >= kCustomBase + 4 && a < kCustomBase + 8) {   // VPOSR ($DFF004) and VHPOSR ($DFF006): the beam position
+        const Word vposr = static_cast<Word>((lof_ ? 0x8000U : 0U) | ((beamV_ >> 8) & 1U));
+        const Word vhposr = static_cast<Word>(((beamV_ & 0xFFU) << 8) | (beamH_ & 0xFFU));
+        const Long both = (static_cast<Long>(vposr) << 16) | vhposr;
+        for (unsigned i = 0; i < static_cast<unsigned>(s); ++i) {
+            const Address at = a + i;
+            const unsigned off = at - (kCustomBase + 4);
+            v = (v << 8) | (off < 4 ? ((both >> (24 - 8 * off)) & 0xFFU) : readByte(at));
+        }
+        if (a <= kCustomBase + 6 && a + static_cast<unsigned>(s) > kCustomBase + 6) advanceBeam();   // reading VHPOSR moves the beam on
+        value = v;
+        return true;
+    }
     for (unsigned i = 0; i < static_cast<unsigned>(s); ++i) v = (v << 8) | readByte(a + i);
     value = v;
     return true;
+}
+
+void Amiga500::advanceBeam() {
+    beamH_ += 32;
+    if (beamH_ >= 228) {
+        beamH_ -= 228;
+        if (++beamV_ >= 312) {
+            beamV_ = 0;
+            lof_ = !lof_;
+        }
+    }
 }
 
 bool Amiga500::write(Address a, Size s, Long value) {

@@ -219,6 +219,7 @@ struct Monitor::Impl {
             case StopReason::Watchpoint: o << "watchpoint at " << h6(r.watchAddress); break;
             case StopReason::Reached: o << "reached " << h6(rg.pc); break;
             case StopReason::Returned: o << "returned"; break;
+            case StopReason::WrittenCode: o << "code in memory the program wrote"; break;
             case StopReason::Stopped: o << "STOP instruction (waiting for an interrupt)"; break;
             case StopReason::Halted: o << "halted (double fault)"; break;
             case StopReason::Requested: o << m.cpu_->stopMessage(); break;

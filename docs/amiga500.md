@@ -104,5 +104,8 @@ Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ans
   `D0`=`A0`=0 und den Stapel an das Ende des Chip-RAM (`chip_kb*1024 - 16`). Bibliotheksaufrufe (`JSR -offset(A6)`) laufen ohne OS-Emulation
   (`os` nicht gesetzt) ins Leere; mit `os:true` werden einige nachgebildet, der Rest protokolliert (siehe oben).
 
-Nicht vorgesehen (Entscheidung): Blitter, Copper, Paula/Ton, Disketten (ADF), Bildschirmdarstellung der Bitplanes, Kickstart-Boot.
+- **Strahlzähler:** Jedes Lesen von `VPOSR`/`VHPOSR` rückt den Strahl um 32 Farbtakte weiter (228 je Zeile, 312 Zeilen, dann wechselt das Bild); Programme, die auf eine Rasterzeile warten, hängen also nicht. Der Zähler gehört zum Zustand (`rollback`).
+- **Disketten:** Disketten laufen **nicht** als Laufwerk, aber ihre Abbilder (ADF) lassen sich lesen (`m68ktool adf …`, [unpacking.md](unpacking.md)).
+
+Nicht vorgesehen (Entscheidung): Blitter, Copper, Paula/Ton, Laufwerke und Spurlader, Bildschirmdarstellung der Bitplanes, Kickstart-Boot.
 Mögliche Erweiterungen der OS-Emulation (weitere `exec`/`dos`-Funktionen, Strukturen wie `FileHandle`/`Process`) stehen in der [Roadmap](roadmap.md).

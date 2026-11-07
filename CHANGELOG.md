@@ -11,6 +11,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte mit OS-Emulation,
 Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orchestrator ist noch nicht mit einem echten Modell erprobt (siehe docs/roadmap.md).
 
+### Hinzugefügt
+- **ADF-Diskettenabbilder lesen** (`m68k::AdfImage`, `m68ktool adf info|ls|extract|boot|block`): OFS und FFS, Unterverzeichnisse, Dateien mit Erweiterungsblöcken, Prüfsummen; Disketten mit eigenem Lader werden akzeptiert. Gegen `xdftool` aus amitools geprüft (`tools/crosscheck_adf.py`, in der CI).
+- **Selbstentpackende Programme untersuchen** ([docs/unpacking.md](docs/unpacking.md)): `run_until_unpacked` (hält an, wenn Code aus Speicher geholt wird, den das Programm geschrieben hat und dessen geschriebener Bereich groß genug ist), `written`, `track_writes`, `save_memory`.
+- **Strahlzähler:** Lesen von `VPOSR`/`VHPOSR` rückt den Strahl weiter; Programme, die auf eine Rasterzeile warten (Entpacker), hängen nicht mehr.
+
 ### Behoben
 - **Befunde des zweiten Blindtests** (ein Agent kommentierte den Rechner blind, 13 von 13 Routinen richtig; zehn neue Werkzeugprobleme, vier schwere):
   - **`mark_data` auf einer erkannten Sprungtabelle zerstörte sie:** Die Fälle verschwanden (13 Routinen wurden zu 8), obwohl der System-Prompt genau das empfiehlt. Die Tabellenerkennung verlangte, dass die Tabellen-Bytes **kein** Datenbereich sind; der Sprungbefehl ist aber der Beleg. Nur die Ziele dürfen keine Daten sein.
