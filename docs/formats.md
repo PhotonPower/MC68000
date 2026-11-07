@@ -41,6 +41,8 @@ von Anzahl bis Daten).
 
 `m68ktool dis` erkennt AmigaDOS-Programme am Kennwort `$000003F3` und lädt sie (`m68k/hunk.hpp`):
 
+- Der Lader schützt sich vor beschädigten Dateien: Die im Kopf angekündigten Größen dürfen zusammen den 16-MiB-Adressraum nicht überschreiten (geprüft, **bevor** Speicher belegt wird), Blöcke und Verschiebungen
+  dürfen nicht über die Datei oder den Hunk hinausreichen, höchstens 4096 Hunks; jeder Verstoß ist ein `IoError`.
 - unterstützte Blöcke: `HUNK_HEADER`, `HUNK_CODE`, `HUNK_DATA`, `HUNK_BSS`, `HUNK_RELOC32`, `HUNK_SYMBOL`,
   `HUNK_DEBUG` und `HUNK_NAME` (übersprungen), `HUNK_END`; die Speicherattribute (Chip/Fast) in den oberen
   Bits der Größen werden ignoriert

@@ -219,6 +219,8 @@ void Json::dumpTo(std::string& out) const {
         case Type::Number:
             if (isInt_) {
                 out += std::to_string(int_);
+            } else if (num_ == 0) {
+                out += "0";   // also for -0.0, which would read back as the integer 0
             } else if (std::isfinite(num_)) {
                 char buf[32];
                 std::snprintf(buf, sizeof buf, "%.17g", num_);

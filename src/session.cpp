@@ -437,6 +437,7 @@ Json Session::Impl::cmdStep() {
     if (cmd == "step") {
         const std::int64_t n = arg("n") ? number(need("n")) : 1;
         if (n < 1) throw SessionError("n must be at least 1");
+        if (n > kMaxLimit) throw SessionError("n must be at most " + std::to_string(kMaxLimit));
         RunResult total;
         total.reason = StopReason::None;
         Json trace = Json::array();

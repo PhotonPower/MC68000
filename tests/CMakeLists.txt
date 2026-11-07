@@ -6,12 +6,18 @@ if(Python3_FOUND)
 endif()
 
 # Each suite is one executable without an external test framework (see test_util.hpp).
-foreach(name format memory expression decoder assembler roundtrip image_io hunk hunk_write disassembler cpu session reverse monitor os optimize jumptable datatypes)
+foreach(name format memory expression decoder assembler roundtrip image_io hunk hunk_write disassembler cpu session reverse monitor os optimize jumptable datatypes robustness)
   add_executable(test_${name} test_${name}.cpp)
   target_link_libraries(test_${name} PRIVATE m68kcore)
   m68k_set_warnings(test_${name})
   add_test(NAME ${name} COMMAND test_${name})
 endforeach()
+
+# The randomised robustness test runs a tenth of its iterations under the sanitizers (they make it about ninety times slower);
+# M68K_FUZZ_SCALE=100 M68K_FUZZ_SEED=<n> ctest -R robustness runs it in full with another random sequence.
+if(M68K_SANITIZE)
+  set_tests_properties(robustness PROPERTIES ENVIRONMENT "M68K_FUZZ_SCALE=10")
+endif()
 
 # Smoke test of the command line tool.
 add_test(NAME cli_version COMMAND m68ktool version)

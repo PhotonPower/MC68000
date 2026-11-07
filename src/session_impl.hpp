@@ -21,6 +21,8 @@ namespace m68k {
 namespace session_detail {
 
 inline constexpr std::uint64_t kDefaultLimit = 1000000;
+/// Upper bound for max_instructions and for `step n`: a client must not be able to hang the server with an endless loop and a huge limit.
+inline constexpr std::int64_t kMaxLimit = 100000000;
 inline constexpr Address kGenericStackTop = 0x80000;
 inline constexpr Address kDefaultHunkBase = 0x20000;
 inline constexpr Address kReturnSentinel = 0xFFFFF0;
@@ -134,6 +136,7 @@ struct Session::Impl {
         if (!j) return kDefaultLimit;
         const std::int64_t n = number(*j);
         if (n < 0) throw SessionError("max_instructions must not be negative");
+        if (n > kMaxLimit) throw SessionError("max_instructions must be at most " + std::to_string(kMaxLimit) + " (call run again to go on)");
         return static_cast<std::uint64_t>(n);
     }
     bool flag(const char* name, bool fallback = false) const {

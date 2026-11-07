@@ -26,8 +26,8 @@ Eine vollständige Beispielsitzung liegt in `examples/agent_session.jsonl`: `m68
   Strings sind **Ausdrücke**: `"start+4"`, `"A0"`, `"SP-2"`; Marken aus `asm` und `load_file` sowie Registernamen
   (`D0`–`D7`, `A0`–`A7`, `SP`, `PC`, `SR`, `USP`, `SSP`) sind verwendbar. Adressen werden auf 24 Bit beschränkt.
 - **Ausgaben** sind Strings: Register `"0x0000002A"` (32 Bit), Adressen `"0x001000"` (24 Bit), `SR` `"0x2700"`.
-- Läufe haben immer ein **Limit** (`max_instructions`, Standard 1 000 000). Endlosschleifen halten also mit
-  `"stop":"instruction_limit"` an. Es gibt **kein Timing** (keine Zyklen) – siehe [emulator.md](emulator.md).
+- Läufe haben immer ein **Limit** (`max_instructions`, Standard 1 000 000, **höchstens 100 000 000**; ein größerer Wert – auch bei `step n` – ist ein Fehler, damit kein Aufruf den Server auf
+  Dauer blockieren kann). Endlosschleifen halten also mit `"stop":"instruction_limit"` an; mit `run` geht es von dort weiter. Es gibt **kein Timing** (keine Zyklen) – siehe [emulator.md](emulator.md).
 - Dateizugriff ist **aus**, solange der Betreiber `--allow-files` nicht angibt.
 - Eine Sitzung ist eine Maschine (ein Prozessor, 16 MiB Adressraum). Parallele Maschinen = mehrere Prozesse.
 
@@ -140,4 +140,4 @@ Hinweise zur Verwendung durch ein Modell:
 Der emulierte Code kann nur den eigenen 16-MiB-Speicher und die Geräte-Protokolle beeinflussen, nichts auf dem Host.
 Dateizugriff gibt es nur mit `--allow-files`; dann kann der Agent beliebige Pfade lesen/schreiben, die der Serverprozess
 erreicht – den Server deshalb mit eingeschränkten Rechten oder in einem Verzeichnis-Sandbox starten. Die Laufzeit ist über
-`max_instructions` begrenzt; ein einzelner Aufruf mit sehr hohem Limit blockiert den Server entsprechend lange.
+`max_instructions` begrenzt (höchstens 100 000 000 Befehle je Aufruf, rund eine Sekunde bis wenige Sekunden); `read` liefert höchstens 4096 Byte, `write` nimmt höchstens 65 536 Byte, JSON-Eingaben dürfen höchstens 64 Ebenen tief verschachtelt sein.

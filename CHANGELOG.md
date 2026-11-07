@@ -7,6 +7,9 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Robustheitstest** (`tests/test_robustness.cpp`): zufällige Eingaben für JSON-Parser, Server (zufällige Befehle mit Argumenten aller JSON-Typen), Hunk-Lader, S-Records, Snapshot- und Projektdateien; läuft auch unter den Sanitizern.
+  Er fand zwei Fehler, die behoben sind: **`max_instructions` und `step n` hatten keine Obergrenze** (ein Modell konnte den Server mit einer Endlosschleife und einem riesigen Limit praktisch für immer blockieren; jetzt höchstens
+  100 000 000, darüber ein Fehler) und der **Hunk-Lader stürzte bei einem beschädigten Kopf mit `std::bad_alloc` ab** (Größen werden jetzt vor der Speicherbelegung gegen den 16-MiB-Adressraum geprüft). Außerdem schreibt der JSON-Writer `-0.0` als `0`.
 - **Erkennung von Zahlentabellen** (`words`, `longs`) in `data_regions`: Der Code lädt die Adresse in ein Adressregister und läuft mit `(An)+` oder `(An,Dn)` in einer Operandengröße hindurch; Gemischtes, feste Verschiebungen, einzelne Einträge und Nullen
   ergeben keinen Vorschlag. Das Listing zeigt sie als `DC.W`/`DC.L`-Zeilen. Der Hinweis aus dem Code geht vor dem Inhalt (druckbar aussehende Zahlen werden nicht zu Text), ein eindeutiger String geht vor der Zahlentabelle.
 - **Vorbereitung der Erprobung:** `--dry-run` im Orchestrator (Analyse ohne Modell, Bearbeitungsreihenfolge, Sprungtabellen, Datenbereiche, Bibliotheksaufrufe, Token-Schätzung mit Warnung);

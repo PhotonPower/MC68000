@@ -75,6 +75,10 @@ HunkImage loadHunkFile(const std::vector<Byte>& file, Address base) {
         if ((s >> 30) == 3) (void)in.u32();  // extended memory attributes follow
         sizes.push_back(s & kSizeMask);
     }
+    // refuse absurd sizes before anything is allocated: the header of a damaged file can announce gigabytes
+    std::uint64_t announced = 0;
+    for (const std::uint32_t longs : sizes) announced += std::uint64_t{longs} * 4;
+    if (announced > kMaxTotal) throw IoError("hunk file: the header announces " + std::to_string(announced) + " bytes, more than the 16 MiB address space");
 
     std::vector<Pending> hunks(count);
     std::uint32_t current = 0;
