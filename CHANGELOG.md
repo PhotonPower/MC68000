@@ -7,6 +7,8 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Erkennung von Einzelvariablen** in `data_regions`: ein Speicheroperand, den der Code immer mit derselben Größe `.W` oder `.L` anspricht, wird als Wort- bzw. Langwort-Variable vorgeschlagen; das Listing zeigt `DC.W`/`DC.L` statt einzelner Bytes.
+  Kein Vorschlag bei Bytes, gemischten Größen, `LEA`/`PEA`, ungerader Adresse. Bekannte Grenze: ein direkter Zugriff in die Mitte einer Tabelle schneidet sie ab (siehe docs/reverse-engineering.md).
 - **Robustheitstest** (`tests/test_robustness.cpp`): zufällige Eingaben für JSON-Parser, Server (zufällige Befehle mit Argumenten aller JSON-Typen), Hunk-Lader, S-Records, Snapshot- und Projektdateien; läuft auch unter den Sanitizern.
   Er fand zwei Fehler, die behoben sind: **`max_instructions` und `step n` hatten keine Obergrenze** (ein Modell konnte den Server mit einer Endlosschleife und einem riesigen Limit praktisch für immer blockieren; jetzt höchstens
   100 000 000, darüber ein Fehler) und der **Hunk-Lader stürzte bei einem beschädigten Kopf mit `std::bad_alloc` ab** (Größen werden jetzt vor der Speicherbelegung gegen den 16-MiB-Adressraum geprüft). Außerdem schreibt der JSON-Writer `-0.0` als `0`.

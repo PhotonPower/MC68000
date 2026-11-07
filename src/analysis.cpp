@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdio>
 #include <map>
+#include <set>
 #include <cstdlib>
 
 #include "m68k/decoder.hpp"
@@ -531,6 +532,48 @@ std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& c
         }
     }
     out.insert(out.end(), found.begin(), found.end());
+
+    // scalar variables: a memory operand (absolute or PC-relative) that is always accessed with the same size. A word or longword makes the size of the
+    // variable known; bytes say nothing (that is what the listing shows anyway), and an address that is taken (LEA/PEA) or touched by other sizes is not a scalar.
+    {
+        std::map<Address, std::set<char>> sizes;
+        std::map<Address, std::string> how;
+        std::set<Address> addressTaken;
+        for (const auto& [at, in] : code_) {
+            if (!in.reference) continue;
+            const std::string& m = in.mnemonic;
+            const std::size_t dot = m.find('.');
+            if (m == "LEA" || m == "PEA" || m == "JMP" || m == "JSR" || dot == std::string::npos) {
+                if (m == "LEA" || m == "PEA") addressTaken.insert(*in.reference);
+                continue;
+            }
+            if (m.rfind("MOVEM", 0) == 0) continue;
+            const char sz = m.back();
+            if (sz != 'B' && sz != 'W' && sz != 'L') continue;
+            sizes[*in.reference].insert(sz);
+            if (!how.count(*in.reference)) {
+                char buf[24];
+                std::snprintf(buf, sizeof buf, " at $%06X", at);
+                how[*in.reference] = in.text() + buf;
+            }
+        }
+        for (const auto& [r, set] : sizes) {
+            if (set.size() != 1 || *set.begin() == 'B' || addressTaken.count(r)) continue;
+            const unsigned size = *set.begin() == 'W' ? 2 : 4;
+            if (!inRange(r) || !inRange(r + size - 1) || (r & 1U)) continue;
+            bool clear = true;
+            for (unsigned i = 0; i < size && clear; ++i) clear = free(r + i) && !used[r + i - from_];
+            for (unsigned i = 1; i < size && clear; ++i) clear = !refs_.count(r + i);       // another operand points into the middle: not a scalar of this size
+            if (!clear) continue;
+            DataGuess g;
+            g.kind = size == 2 ? DataGuess::Kind::Words : DataGuess::Kind::Longs;
+            g.start = r;
+            g.length = size;
+            g.reason = std::string("accessed as a ") + (size == 2 ? "word" : "longword") + " variable: " + how[r];
+            out.push_back(g);
+            for (unsigned i = 0; i < size; ++i) used[r + i - from_] = true;
+        }
+    }
 
     // runs of zero bytes
     for (Address a = from_; a < to_;) {

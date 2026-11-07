@@ -217,6 +217,106 @@ int main() {
         CHECK(has(lst.find("listing")->asString(), "DC.W     $0003,$0001,$0004,$0001,$0005,$0009"));
     }
 
+    // ---- scalar variables: the size the code accesses them with ------------------------------------------------------------------------------------------------
+    {
+        const Built b(
+            "        ORG $1000\nstart:  MOVE.W D0,wvar\n        MOVE.W wvar,D1\n        MOVE.L D0,lvar\n        MOVE.B D0,bvar\n        RTS\n"
+            "wvar:   DC.W 0\nlvar:   DC.L 0\nbvar:   DC.B 0\n");
+        const std::vector<DataGuess> g = analyse(b).guessData();
+        const DataGuess* w = at(g, b.sym("wvar"));
+        CHECK(w != nullptr && w->kind == DataGuess::Kind::Words && w->length == 2);
+        if (w) CHECK(has(w->reason, "word variable"));
+        const DataGuess* l = at(g, b.sym("lvar"));
+        CHECK(l != nullptr && l->kind == DataGuess::Kind::Longs && l->length == 4);
+        CHECK(at(g, b.sym("bvar")) == nullptr);                 // a byte says nothing the listing does not show already
+        // no guess: mixed sizes, an address that is taken, a byte-wise neighbour in the middle, outside the program
+        const Built mixed("        ORG $1000\nstart:  MOVE.W D0,v\n        MOVE.L D0,v\n        RTS\nv:      DC.L 0\n");
+        CHECK(analyse(mixed).guessData().empty());
+        const Built taken("        ORG $1000\nstart:  LEA v,A0\n        MOVE.W D0,v\n        RTS\nv:      DC.W 0\n");
+        CHECK(analyse(taken).guessData().empty());
+        const Built inside("        ORG $1000\nstart:  MOVE.L D0,v\n        MOVE.W v+2,D1\n        RTS\nv:      DC.L 0\n");
+        const std::vector<DataGuess> gi = analyse(inside).guessData();
+        CHECK(at(gi, inside.sym("v")) == nullptr);
+        const Built outside("        ORG $1000\nstart:  MOVE.W D0,$2000.W\n        MOVE.L D0,$100000\n        RTS\n");
+        CHECK(analyse(outside).guessData().empty());
+        // a direct access into the middle of a table is a boundary like any other referenced address (otherwise the table would swallow the variables behind it,
+        // in a hunk program the next hunk): the table is cut short and gets no guess. Known limit, see docs/reverse-engineering.md.
+        const Built array(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        MOVE.W tab+2,D1\n        RTS\ntab:    DC.W 1,2,3,4\n");
+        const std::vector<DataGuess> ga = analyse(array).guessData();
+        CHECK(at(ga, array.sym("tab")) == nullptr);
+        // an array that is only walked through keeps its kind and its full length
+        const Built walked(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        MOVE.W D0,total\n        RTS\ntab:    DC.W 1,2,3,4\ntotal:  DC.W 0\n");
+        const std::vector<DataGuess> gw2 = analyse(walked).guessData();
+        const DataGuess* tw = at(gw2, walked.sym("tab"));
+        CHECK(tw != nullptr && tw->kind == DataGuess::Kind::Words && tw->length == 8);   // ends in front of `total`, which is referenced itself
+        const DataGuess* tot = at(gw2, walked.sym("total"));
+        CHECK(tot != nullptr && tot->kind == DataGuess::Kind::Words && tot->length == 2);
+        // as annotations they are shown with their size
+        Session s;
+        CHECK(ok(call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(
+            "        ORG $1000\nstart:  MOVE.W D0,wvar\n        MOVE.L D0,lvar\n        RTS\nwvar:   DC.W 0\nlvar:   DC.L 0\n") + "\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        CHECK_EQ(call(s, "{\"cmd\":\"data_regions\",\"apply\":true}").find("applied")->asInt(), std::int64_t{2});
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
+        CHECK(lst.find("verified")->asBool());
+        CHECK(has(lst.find("listing")->asString(), "DC.W     $0000\n"));
+        CHECK(has(lst.find("listing")->asString(), "DC.L     $00000000\n"));
+    }
+    {
+        // random programs: every variable gets exactly its size, the listing verifies
+        std::mt19937 rng(8080);
+        int words = 0, longs = 0;
+        for (int trial = 0; trial < 200; ++trial) {
+            const unsigned n = 2 + static_cast<unsigned>(rng() % 6);
+            std::vector<bool> isLong(n);
+            std::string code = "        ORG $1000\nstart:\n", data;
+            for (unsigned i = 0; i < n; ++i) {
+                isLong[i] = rng() % 2;
+                const std::string name = "v" + std::to_string(i);
+                const char* sz = isLong[i] ? "L" : "W";
+                for (unsigned k = 1 + static_cast<unsigned>(rng() % 3); k > 0; --k)
+                    code += rng() % 2 ? std::string("        MOVE.") + sz + " D" + std::to_string(rng() % 8) + "," + name + "\n"
+                                      : std::string("        MOVE.") + sz + " " + name + ",D" + std::to_string(rng() % 8) + "\n";
+                data += name + ": DC." + sz + " " + std::to_string(rng() % 1000) + "\n";
+                if (rng() % 3 == 0) data += "        DC.B 7\n        EVEN\n";
+            }
+            const Built b(code + "        RTS\n" + data);
+            const Analysis an = analyse(b);
+            const std::vector<DataGuess> g = an.guessData();
+            Annotations ann;
+            for (unsigned i = 0; i < n; ++i) {
+                const DataGuess* x = at(g, b.sym("v" + std::to_string(i)));
+                CHECK(x != nullptr);
+                if (!x) continue;
+                CHECK(x->kind == (isLong[i] ? DataGuess::Kind::Longs : DataGuess::Kind::Words));
+                CHECK_EQ(x->length, isLong[i] ? 4U : 2U);
+                (isLong[i] ? longs : words)++;
+            }
+            for (const DataGuess& x : g) {
+                DataRegion region;
+                region.address = x.start;
+                region.length = x.length;
+                region.kind = x.kind == DataGuess::Kind::Text ? DataKind::Text : x.kind == DataGuess::Kind::Words ? DataKind::Words : x.kind == DataGuess::Kind::Longs ? DataKind::Longs : DataKind::Pointers;
+                if (x.kind != DataGuess::Kind::Zeros) (void)ann.setData(region);
+            }
+            Analysis an2(b.mem, b.from, b.to);
+            an2.addEntry(b.sym("start"));
+            an2.setDataBarrier([&ann](Address a) { return ann.dataCovering(a) != nullptr; });
+            an2.analyzeFlow();
+            ListingOptions lo;
+            lo.from = b.from;
+            lo.to = b.to;
+            const ListingResult r = renderListing(b.mem, an2, ann, lo);
+            CHECK(r.verified);
+            if (!r.verified) std::fprintf(stderr, "%s\n--\n%s\n", (code + data).c_str(), r.text.c_str());
+        }
+        CHECK(words > 100);
+        CHECK(longs > 100);
+    }
+
     // ---- the session: data_regions, apply, listing --------------------------------------------------------------------------------------------------
     {
         Session s;
