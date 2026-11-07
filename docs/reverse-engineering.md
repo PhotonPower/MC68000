@@ -23,7 +23,7 @@ mit Hilfe eines lokalen Modells (z. B. über Ollama). Das Vorbild ist das
 | `get_listing`, `disassemble`, `read_memory` | ansehen |
 | `run_routine` | Routine im Emulator wie eine Funktion aufrufen (Register/Speicher vorgeben, optional `setup`: Routinen, die vorher auf derselben Maschine laufen, in der Regel der Programmeinsprung, der Bibliotheken öffnet und Variablen setzt – ohne `setup` ist eine Routine, die von solchem Zustand abhängt, nicht testbar; der Bericht zählt nur, was die Routine selbst tut: Speicher, den der Aufrufer vorbereitet hat, und die Ausgaben des `setup` zählen nicht). Hinweise im Ergebnis: ob sie wirklich zurückgekehrt ist, und ob Befehle aus **leerem Speicher** ausgeführt wurden (Sprung durch einen nicht gesetzten Zeiger oder eine Bibliotheksbasis 0); Ergebnis: Register, geänderter Speicher (Stapel ausgenommen), Schreibzugriffe auf Custom-/CIA-Register (getrennt nach „von der Routine selbst“ und „von aufgerufenem Code“), Ausnahmen (z. B. Adressfehler durch einen nicht gesetzten Zeiger), **Bibliotheksaufrufe** (Name, Register, ob emuliert) und über `dos Write` ausgegebener Text |
 | `reset_machine` | Ausgangszustand wiederherstellen (sonst geschieht das nach jedem `run_routine` automatisch) |
-| `name_label`, `document_routine`, `name_variable`, `mark_data`, `add_comment` | **Namen und Kommentare** festhalten |
+| `name_label`, `document_routine`, `name_variable`, `mark_data` (bei `text` ohne Länge: der String endet mit seinem NUL), `add_comment`, **`remove_annotation`** (macht einen Namen, eine Variable, einen Datenbereich oder einen Kommentar rückgängig) | **Namen und Kommentare** festhalten |
 | `finish_routine` | Routine abschließen |
 
 Das Modell **kann den Code nicht verändern** (siehe unten). Jedes Experiment läuft auf einem Checkpoint (`baseline`) und wird danach
@@ -71,9 +71,14 @@ festhängen. `agent/m68k_drive.py finish` ist dagegen **streng** (die Routine wi
 alles, worauf die Operanden zeigen und was im Ausschnitt nur als Adresse steht – Strings mit ihrem Inhalt, Tabellen und Variablen mit den ersten Werten, andere Routinen, der Zeiger auf ExecBase
 (Adresse 4). Der Befehl dahinter ist `references` ([agent-protocol.md](agent-protocol.md)).
 
-**Berichte von `run_routine`:** außer Registern und Speicher (Hex **und**, wenn es nach Text aussieht, als ASCII) die Bibliotheksaufrufe mit D0–D3/A0/A1 und der Adresse des `JSR`
-selbst (dort gehört ein Kommentar hin), und **Hinweise**: ob die Routine wirklich zurückkehrte, Befehle aus leerem Speicher, Schreiben **hinter das Ende des geladenen Programms** (Pufferüberlauf am letzten Hunk)
-oder **in den Code einer Routine**. `setup` lässt die genannten Routinen **vollständig** laufen, auch ein `CloseLibrary` am Ende; die Bibliotheksbasis bleibt für den Test benutzbar
+**Routinengrenzen:** Eine Routine ist ihr **eigener Code**. Ein unbedingter Sprung (oder ein bedingter) zum Anfang einer **anderen Routine** ist ein **Tail-Call**: Die andere gehört nicht dazu, sie ist ein Aufgerufener, und der Sprung zählt als ihr Aufrufer. Ein gemeinsamer Ausgang weit hinten (ein Fehlerpfad, den viele Fälle
+anspringen) ist ein **eigener Block** der Routine: `routines` liefert `blocks` (zusammenhängende Bereiche) neben der Hülle `start`/`end`; der Auftrag an das Modell zeigt je Block ein Listing („part 1 of 2“), die Größe zählt nur den eigenen Code, und die Vollständigkeitsprüfung verlangt Namen nur für Labels in diesen Blöcken. Ein Fall einer Sprungtabelle,
+den niemand aufruft, heißt „reached through the jump table at …“ (`via_table`).
+Eine **Sprungtabelle darf als Datenbereich markiert werden** (`mark_data`; so benennt man sie): Die Fälle bleiben Routinen. Der Sprungbefehl ist der Beleg, nicht die Bytes der Tabelle.
+
+**Berichte von `run_routine`:** außer Registern und Speicher (Hex **und**, wenn es nach Text aussieht, als ASCII; mit den Namen der Variablen und Datenbereiche, in denen die Änderung liegt, z. B. `[number_buffer+6]`; Speicher kann als `"text"` statt `"hex"` angegeben werden, mit NUL am Ende) die Bibliotheksaufrufe mit D0–D3/A0/A1 und der Adresse des `JSR`
+selbst (dort gehört ein Kommentar hin), und **Hinweise**: ob die Routine wirklich zurückkehrte, Befehle aus leerem Speicher, Schreiben **hinter das Ende des geladenen Programms** (Pufferüberlauf am letzten Hunk; „mindestens bis“, denn nur geänderte Bytes sind sichtbar)
+oder **in den Code einer Routine**; Speicher, den der Aufrufer selbst angelegt hat, löst den Hinweis nicht aus. `setup` lässt die genannten Routinen **vollständig** laufen, auch ein `CloseLibrary` am Ende; die Bibliotheksbasis bleibt für den Test benutzbar
 (der Emulator nimmt das hin).
 
 **Bekannte Grenze der Datentyp-Erkennung:** Eine Tabelle, die nur als Zeiger **an eine andere Routine** übergeben und dort mit `(A0)+` gelesen wird, erkennt die Analyse nicht

@@ -262,6 +262,60 @@ class ExampleProgramTest(unittest.TestCase):
         finally:
             s.close()
 
+    def test_findings_of_the_second_blind_run(self):
+        """Memory as text, no false alarm in the caller's own buffer, names of the variables a change lies in, remove_annotation, get_listing without EQU."""
+        s, tools = self._server_with_example()
+        try:
+            # text instead of hex: the string and its NUL terminator are written
+            text = tools.t_run_routine("0x02004A", registers={"A0": "0x030000"}, setup=[{"addr": "0x020000"}], memory=[{"addr": "0x030000", "text": "Hi there"}])
+            self.assertIn("stop: returned  returned: True", text)
+            self.assertIn("'Hi there'", text)
+            # the note about a write beyond the program does not fire inside memory the caller set up for the test
+            tools.program = (0x020000, 0x020148)                       # what the analysis found (the orchestrator and the drive set it)
+            notes = tools.write_notes([{"addr": "0x031000", "len": 4}], caller_ranges=[(0x031000, 16)])
+            self.assertEqual(notes, [])
+            self.assertEqual(len(tools.write_notes([{"addr": "0x031000", "len": 4}], caller_ranges=[(0x032000, 16)])), 1)       # elsewhere it does
+            self.assertEqual(len(tools.write_notes([{"addr": "0x030FFE", "len": 8}], caller_ranges=[(0x031000, 16)])), 1)       # partly outside the buffer: still reported
+            self.assertIn("at least", tools.write_notes([{"addr": "0x031000", "len": 4}])[0])
+            # the variables a change lies in are named (cmd_sum prints its result through the buffer behind `total`)
+            self.assertEqual(tools.dispatch("name_variable", {"addr": "0x02013A", "name": "number_buffer", "size": 12}), "ok: variable number_buffer")
+            report = tools.t_run_routine("0x020086", setup=[{"addr": "0x020000"}])
+            self.assertRegex(report, r"0x02014\d len \d+: [0-9A-F]+ -> [0-9A-F]+ .*\[number_buffer\+\d+\]")
+            # remove_annotation undoes a name or a data region
+            self.assertEqual(tools.dispatch("remove_annotation", {"addr": "0x02013A"}), "ok: removed")
+            self.assertEqual(tools.dispatch("remove_annotation", {"addr": "0x02013A"}), "nothing was annotated at that address")
+            self.assertNotIn("number_buffer", tools.t_run_routine("0x020086", setup=[{"addr": "0x020000"}]))
+            # an excerpt for reading has no prelude of EQU lines
+            self.assertNotIn(" EQU ", tools.dispatch("get_listing", {"from": "0x020000", "to": "0x020048"}))
+        finally:
+            s.close()
+
+    def test_touched_names_and_the_comment_rule(self):
+        objects = [(0x1000, 4, "stack_ptr"), (0x1004, 16, "stack")]
+        self.assertEqual(annotate.touched_names(objects, 0x1000, 4), "  [stack_ptr]")
+        self.assertEqual(annotate.touched_names(objects, 0x1003, 3), "  [stack_ptr+3, stack]")          # a range that starts in one object and goes on into the next
+        self.assertEqual(annotate.touched_names(objects, 0x2000, 2), "")
+
+        class Fake:                                                      # a server that only answers the listing of a routine
+            def __init__(self, instructions, comments):
+                self.reply = {"listing": "", "instructions": instructions, "user_comments": comments}
+
+            def ok(self, **req):
+                return self.reply
+
+        def problems(instructions, comments):
+            tools = annotate.Tools(Fake(instructions, comments))
+            tools.range = ("0x1000", "0x1100")
+            return tools.completeness_problems()
+
+        self.assertEqual(problems(2, 1), [])                           # two instructions: one comment is enough (it asked for two before)
+        self.assertEqual(len(problems(2, 0)), 1)
+        self.assertEqual(problems(3, 1), [])
+        self.assertEqual(len(problems(4, 1)), 1)                       # four instructions: two
+        self.assertEqual(problems(4, 2), [])
+        self.assertEqual(len(problems(30, 2)), 1)                      # about one per ten: three
+        self.assertEqual(problems(30, 3), [])
+
     def test_dry_run_of_the_orchestrator_contacts_no_model(self):
         mock = MockOllama({})
         url = mock.start()
@@ -277,7 +331,7 @@ class ExampleProgramTest(unittest.TestCase):
         self.assertIn("== dry run: no model is contacted ==", text)
         self.assertIn("7 routines, 7 still without documentation", text)
         self.assertIn("jump table (offset)", text)
-        self.assertIn("library calls (JSR offset(A6)): -552 x1, -414 x1, -60 x1, -48 x4", text)
+        self.assertIn("library calls (JSR offset(A6)): -552 x1, -414 x1, -60 x1, -48 x1", text)
         self.assertIn("without --dry-run", text)
         self.assertNotIn("WARNING", text)
 

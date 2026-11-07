@@ -131,7 +131,7 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
         Address p = base;
         while (inRange(p) && !(p & 1U) && jt.slots.size() < 1024) {
             if (state_[p - from_] == 2 || state_[p - from_] == 3) break;   // inside an instruction or table data (an entry that is code already is fine)
-            if (isData_ && isData_(p)) break;
+            // (the entries may be annotated as data: the jump instruction is the evidence, and a table is data. Only the targets must not be data.)
             const Instruction e = decode(mem_, p);
             const bool jumpEntry = e.valid && e.flow == FlowKind::Jump && e.target &&
                                    (e.mnemonic.rfind("BRA", 0) == 0 || (e.mnemonic == "JMP" && e.length() == 6));
@@ -178,7 +178,7 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
         for (Address slot = table; jt.slots.size() < 512; slot += 2) {
             if (!inRange(slot) || !inRange(slot + 1) || state_[slot - from_] != 0 || state_[slot + 1 - from_] != 0) break;
             if (slot >= minTarget) break;   // the table ends where the first target begins
-            if (isData_ && (isData_(slot) || isData_(slot + 1))) break;
+            // (the words may be annotated as data - mark_data on a table is what the instructions recommend; the jump instruction is the evidence)
             const Address target = static_cast<Address>(base + sext16(mem_.read16(slot))) & kAddressMask;
             if (!inRange(target) || (target & 1U) || (isData_ && isData_(target))) break;
             if (!decode(mem_, target).valid) break;
@@ -280,6 +280,7 @@ std::vector<RoutineInfo> Analysis::routines() const {
         if (at(a)) entries.insert(a);
 
     std::vector<RoutineInfo> out;
+    std::map<Address, std::set<Address>> tailCallers;   // target entry -> the jump instructions that tail-call it
     for (const Address entry : entries) {
         RoutineInfo r;
         r.entry = entry;
@@ -312,19 +313,40 @@ std::vector<RoutineInfo> Analysis::routines() const {
                 case FlowKind::Call: stack.push_back(next); break;
                 case FlowKind::CondJump:
                     stack.push_back(next);
-                    if (in->target) stack.push_back(*in->target);
+                    if (in->target && *in->target != entry && entries.count(*in->target)) {   // to another routine: a tail call
+                        callees.insert(*in->target);
+                        tailCallers[*in->target].insert(a);
+                    } else if (in->target) {
+                        stack.push_back(*in->target);
+                    }
                     break;
                 case FlowKind::Jump:
-                    if (in->target) stack.push_back(*in->target);
+                    if (in->target && *in->target != entry && entries.count(*in->target)) {   // BRA push at the end of a case: push is not part of it
+                        callees.insert(*in->target);
+                        tailCallers[*in->target].insert(a);
+                    } else if (in->target) {
+                        stack.push_back(*in->target);
+                    }
                     break;
                 case FlowKind::Return: break;
             }
+        }
+        for (const Address a : seen) {   // `seen` is ordered: neighbouring instructions form one block
+            const Instruction* in = at(a);
+            if (!in) continue;
+            const Address e = static_cast<Address>(a + in->length());
+            if (!r.blocks.empty() && r.blocks.back().second == a) r.blocks.back().second = e;
+            else r.blocks.emplace_back(a, e);
         }
         r.callees.assign(callees.begin(), callees.end());
         r.externalCalls.assign(external.begin(), external.end());
         if (const auto it = callers_.find(entry); it != callers_.end()) r.callers.assign(it->second.begin(), it->second.end());
         out.push_back(std::move(r));
     }
+    for (RoutineInfo& r : out)
+        if (const auto it = tailCallers.find(r.entry); it != tailCallers.end())
+            for (const Address j : it->second)   // a jump inside the routine itself (its loop back to the entry) is not a call from outside
+                if (!(j >= r.start && j < r.end) && std::find(r.callers.begin(), r.callers.end(), j) == r.callers.end()) r.callers.push_back(j);
 
     // depth over the call graph (cycles are cut by treating a routine under evaluation as depth 0)
     std::map<Address, int> depth;

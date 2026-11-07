@@ -33,7 +33,7 @@ ann = importlib.util.module_from_spec(_spec)
 sys.modules["m68k_annotate"] = ann
 _spec.loader.exec_module(ann)
 
-ANNOTATING = {"name_label", "document_routine", "name_variable", "mark_data", "add_comment", "finish_routine"}
+ANNOTATING = {"name_label", "document_routine", "name_variable", "mark_data", "add_comment", "finish_routine", "remove_annotation"}
 
 
 class DriveError(Exception):
@@ -150,7 +150,7 @@ def cmd_status(a):
             if kind != "finished" and nxt is None:
                 nxt = r
             conf = f", confidence {r['confidence']}" if r.get("confidence") else ""
-            print(f'  {i}. {r["name"]:<22} {r["addr"]}  {ann.to_int(r["end"]) - ann.to_int(r["start"]):>5} B  {kind}{conf}')
+            print(f'  {i}. {r["name"]:<22} {r["addr"]}  {ann.Annotator.own_bytes(r):>5} B  {kind}{conf}')
         done = sum(1 for _, k in rows if k == "finished")
         print(f"{done} of {len(rows)} finished.")
         if nxt:
@@ -190,6 +190,7 @@ def cmd_tool(a):
                 raise DriveError("finish_routine needs the routine: --routine ADDR (or use the `finish` command)")
             r = ws.routine(addr)
             ws.tools.current, ws.tools.range = r["addr"], (r["start"], r["end"])
+            ws.tools.blocks = ann.Annotator.blocks(r)
             ws.tools.finish_warned = r["addr"] in ws.state["warned"]
         elif name == "run_routine" and "addr" in args:
             try:

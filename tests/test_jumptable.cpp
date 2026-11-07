@@ -62,6 +62,10 @@ std::string escape(const std::string& t) {
 }
 
 bool has(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
+std::string str(const Json& j, const char* key) {
+    const Json* v = j.find(key);
+    return v && v->isString() ? v->asString() : "<missing>";
+}
 
 const char* kProgram =
     "        ORG $1000\n"
@@ -334,6 +338,90 @@ int main() {
             CHECK(r.verified);
             if (!r.verified) std::fprintf(stderr, "trial %d: %s\n", trial, r.problem.c_str());
         }
+    }
+
+    // ---- found with the calculator of the second blind test -------------------------------------------------------------------------------------------
+    {
+        // N1: mark_data on a recognised table (the instructions recommend it) must not make its cases disappear
+        const std::string src =
+            "        ORG $1000\nstart:  MOVEQ #1,D0\n        ADD.W D0,D0\n        MOVE.W tab(PC,D0.W),D0\n        JMP base(PC,D0.W)\n"
+            "base:\ntab:    DC.W c0-base,c1-base,c2-base\n"
+            "c0:     MOVEQ #10,D3\n        RTS\nc1:     MOVEQ #11,D3\n        RTS\nc2:     MOVEQ #12,D3\n        RTS\n";
+        Session s;
+        const Json a0 = call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(src) + "\",\"entry\":\"start\"}");
+        CHECK(ok(a0));
+        const std::string tab = a0.find("symbols")->find("tab")->asString();
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        auto routineCount = [&] { return call(s, "{\"cmd\":\"routines\"}").find("routines")->items().size(); };
+        CHECK_EQ(routineCount(), std::size_t{4});                                           // start and the three cases
+        CHECK(ok(call(s, "{\"cmd\":\"ann_data\",\"addr\":\"" + tab + "\",\"length\":6,\"kind\":\"words\",\"name\":\"case_table\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        CHECK_EQ(routineCount(), std::size_t{4});                                           // before: 1 - the cases were lost
+        const Json tables = call(s, "{\"cmd\":\"jump_tables\"}");
+        CHECK_EQ(tables.find("tables")->items().size(), std::size_t{1});
+        CHECK(!tables.find("tables")->items().empty() && tables.find("tables")->items()[0].find("followed")->asBool());
+        const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
+        CHECK(lst.find("verified")->asBool());
+        CHECK(has(lst.find("listing")->asString(), "MOVEQ    #$0C,D3"));                    // the last case is code, not DC.B
+        CHECK(has(lst.find("listing")->asString(), "case_table"));
+        // through the jump table, nobody calls them: said so, not "entry point"
+        const Json byAddress = call(s, "{\"cmd\":\"routines\",\"order\":\"address\"}");
+        const std::vector<Json>& cases = byAddress.find("routines")->items();
+        CHECK(!cases.empty() && cases[0].find("via_table") == nullptr);                     // start is an entry point
+        for (std::size_t i = 1; i < cases.size(); ++i)
+            CHECK(cases[i].find("via_table") != nullptr && std::stoll(str(cases[i], "via_table"), nullptr, 16) == std::stoll(tab, nullptr, 16));
+    }
+    {
+        // N2: a branch to the entry of another routine is a tail call; a shared exit far away is a block of its own
+        const std::string src =
+            "        ORG $1000\nmain:   BSR a\n        BSR b\n        RTS\n"
+            "a:      MOVEQ #1,D0\n        BEQ.S shared\n        BRA b\n"
+            "b:      MOVEQ #2,D1\n        RTS\n"
+            "shared: MOVEQ #9,D2\n        RTS\n";
+        Session s;
+        const Json a0 = call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(src) + "\",\"entry\":\"main\"}");
+        CHECK(ok(a0));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"main\"]}")));
+        const Json rs = call(s, "{\"cmd\":\"routines\",\"order\":\"address\"}");
+        const std::vector<Json>& list = rs.find("routines")->items();
+        CHECK_EQ(list.size(), std::size_t{3});                                              // main, a, b
+        if (list.size() == 3) {
+        const Json& ra = list[1];
+        const Json& rb = list[2];
+        CHECK_EQ(ra.find("instructions")->asInt(), std::int64_t{5});                         // MOVEQ, BEQ.S, BRA and the shared MOVEQ, RTS - not b
+        CHECK_EQ(ra.find("blocks")->items().size(), std::size_t{2});                          // its own code and the exit behind b
+        CHECK_EQ(ra.find("callees")->items().size(), std::size_t{1});                         // b: the tail call is a callee
+        CHECK(!ra.find("callees")->items().empty() && str(ra.find("callees")->items()[0], "addr") == str(rb, "addr"));
+        CHECK_EQ(rb.find("callers")->items().size(), std::size_t{2});                         // the BSR of main and the BRA of a
+        CHECK_EQ(rb.find("blocks")->items().size(), std::size_t{1});                          // MOVEQ, RTS
+        CHECK_EQ(rb.find("instructions")->asInt(), std::int64_t{2});
+        // the hull of a spans b, its own bytes do not
+        std::int64_t own = 0;
+        for (const Json& blk : ra.find("blocks")->items()) own += std::stoll(blk.items()[1].asString(), nullptr, 16) - std::stoll(blk.items()[0].asString(), nullptr, 16);
+        CHECK_EQ(own, ra.find("bytes")->asInt());
+        CHECK(std::stoll(ra.find("end")->asString(), nullptr, 16) - std::stoll(ra.find("start")->asString(), nullptr, 16) > own);
+        }
+    }
+    {
+        // references: bytes that look like a short string, and "..." after a preview that is cut off
+        const std::string src =
+            "        ORG $1000\nstart:  LEA eq(PC),A0\n        LEA tab(PC),A1\n        RTS\neq:     DC.B \" = \",0\n        EVEN\n"
+            "tab:    DC.W 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30\n";
+        Session s;
+        const Json a0 = call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(src) + "\",\"entry\":\"start\"}");
+        CHECK(ok(a0));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        CHECK(ok(call(s, "{\"cmd\":\"ann_data\",\"addr\":\"" + a0.find("symbols")->find("tab")->asString() + "\",\"length\":60,\"kind\":\"words\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        const Json refs = call(s, "{\"cmd\":\"references\",\"from\":\"0x1000\",\"to\":\"0x1008\"}");
+        CHECK(ok(refs));
+        const std::vector<Json>& list = refs.find("references")->items();
+        CHECK_EQ(list.size(), std::size_t{2});
+        CHECK_EQ(str(list[0], "kind"), std::string("text?"));                              // " = " is too short for the string heuristic, but it is one
+        CHECK_EQ(str(list[0], "preview"), std::string(" = "));
+        CHECK_EQ(list[0].find("length")->asInt(), std::int64_t{4});
+        CHECK_EQ(str(list[1], "kind"), std::string("words"));
+        CHECK(str(list[1], "preview").size() > 4 && str(list[1], "preview").compare(str(list[1], "preview").size() - 4, 4, " ...") == 0);   // more than shown
     }
 
     return finish("jumptable");

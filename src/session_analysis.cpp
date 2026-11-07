@@ -136,8 +136,10 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
                     }
                 } else if (region->kind == DataKind::Words || region->kind == DataKind::Longs || region->kind == DataKind::Pointers) {
                     const unsigned step = region->kind == DataKind::Words ? 2 : 4;
-                    for (Address p = t & ~(step - 1U); p + step <= end && preview.size() < 70; p += step)
+                    Address p = t & ~(step - 1U);
+                    for (; p + step <= end && preview.size() < 70; p += step)
                         preview += (preview.empty() ? "" : " ") + hexDigits(step == 2 ? view.read16(p) : view.read32(p), static_cast<int>(step) * 2);
+                    if (p + step <= end) preview += " ...";   // more entries than shown
                 } else {
                     for (Address p = t; p < end && p < t + 16; ++p) preview += (preview.empty() ? "" : " ") + hexDigits(view.read8(p), 2);
                 }
@@ -148,6 +150,15 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
                 } else {
                     name = "data_" + hexDigits(t, 6);
                 }
+                // bytes that no region covers but that read like a short string ("= "): shown as such, marked with a question mark
+                unsigned n = 0;
+                while (n < 40 && t + n <= kAddressMask && printable(view.read8(t + n))) ++n;
+                if (n >= 2 && t + n <= kAddressMask && view.read8(t + n) == 0 && !an.isCode(t)) {
+                    kind = "text?";
+                    length = n + 1;
+                    for (unsigned i = 0; i < n; ++i) preview += static_cast<char>(view.read8(t + i));
+                }
+                if (preview.empty())
                 for (Address p = t; p < t + 8 && p <= kAddressMask; ++p) preview += (preview.empty() ? "" : " ") + hexDigits(view.read8(p), 2);
             }
             e.set("addr", hexAddrS(t)).set("name", name).set("kind", kind).set("length", length);
@@ -230,6 +241,10 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
             if (const auto n = ann.nameAt(a)) return *n;
             return "sub_" + hexDigits(a, 6);
         };
+        std::map<Address, Address> viaTable;   // a case of a jump table is reached through the table, nobody calls it
+        for (const JumpTable& t : an.jumpTables())
+            if (t.followed && t.kind != JumpTable::Kind::Pointers)
+                for (const Address target : t.targets) viaTable.emplace(target, t.table);
         Json out = Json::array();
         for (const RoutineInfo& r : list) {
             const RoutineDoc* doc = ann.routineAt(r.entry);
@@ -240,6 +255,15 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
             e.set("confidence", doc ? doc->confidence : std::string());
             if (doc) e.set("summary", doc->summary).set("inputs", doc->inputs).set("outputs", doc->outputs).set("clobbers", doc->clobbers);
             e.set("start", hexAddrS(r.start)).set("end", hexAddrS(r.end));
+            if (const auto vt = viaTable.find(r.entry); vt != viaTable.end() && r.callers.empty()) e.set("via_table", hexAddrS(vt->second));
+            Json blocks = Json::array();
+            for (const auto& [bs, be] : r.blocks) {
+                Json b = Json::array();
+                b.push(hexAddrS(bs));
+                b.push(hexAddrS(be));
+                blocks.push(b);
+            }
+            e.set("blocks", blocks);
             e.set("instructions", r.instructions).set("bytes", r.bytes).set("depth", r.depth);
             Json callers = Json::array();
             for (const Address c : r.callers) callers.push(hexAddrS(c));

@@ -116,7 +116,7 @@ python3 agent/m68k_drive.py --work $W report                                   #
 ```
 
 `tool` nimmt jedes Werkzeug des Orchestrators (`get_listing`, `disassemble`, `read_memory`, `run_routine`, `reset_machine`, `name_label`, `document_routine`, `name_variable`, `mark_data`,
-`add_comment`, `finish_routine`) mit den Argumenten als **einem JSON-Objekt**. Im Arbeitsverzeichnis liegen `config.json` (Optionen), `project.json` (die Annotationen, nach jedem Befehl gespeichert) und
+`add_comment`, `remove_annotation`, `finish_routine`) mit den Argumenten als **einem JSON-Objekt**. Im Arbeitsverzeichnis liegen `config.json` (Optionen), `project.json` (die Annotationen, nach jedem Befehl gespeichert) und
 `state.json` (welche Routinen abgeschlossen sind und bei welchen die erste Prüfung schon gelaufen ist). Eine Routine gilt als **fertig**, wenn sie dokumentiert ist **und** `finish` sie angenommen hat. `finish` ist hier **streng**: Es nimmt eine Routine nur an, wenn nichts mehr fehlt (benannte Labels, Variablen und Strings, Kommentare, und eine Dokumentation mit `inputs`, `outputs`, `clobbers` und `confidence`); `finish --accept-gaps` gibt die Regel des Orchestrators wieder (der zweite Aufruf gilt).
 Ein starker Agent ersetzt dabei nicht den Test mit einem kleinen Modell (er prüft die Werkzeugkette, nicht Prompt und Parameter für ein 8-Milliarden-Modell), liefert aber ein brauchbares Listing.
 

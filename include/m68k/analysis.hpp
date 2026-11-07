@@ -54,6 +54,9 @@ struct RoutineInfo {
     Address start = 0, end = 0;          ///< extent: lowest address and the address after the highest instruction
     unsigned instructions = 0;
     unsigned bytes = 0;
+    /// The routine's own code as contiguous blocks [start, end). `start`/`end` are only the hull: a shared exit at the end of the program (an error
+    /// path that many routines branch to) makes the hull take in the neighbours, the blocks do not.
+    std::vector<std::pair<Address, Address>> blocks;
     std::vector<Address> callers;        ///< addresses of the instructions that call it
     std::vector<Address> callees;        ///< entries of the routines it calls (inside the analysed code)
     std::vector<Address> externalCalls;  ///< call targets outside the analysed code

@@ -124,6 +124,35 @@ class DriveTest(unittest.TestCase):
         out, _ = self.drive("finish", "0x020070", work=work)                    # the strict rule still sees what is missing
         self.assertIn("not finished yet", out)
 
+    def test_tail_calls_blocks_and_the_jump_table_in_the_task_text(self):
+        """A branch to another routine is a tail call (not part of the routine); a shared exit far away is a part of its own, so the text says
+        'in 2 parts' and shows two listings; a case of a jump table says how it is reached."""
+        src = os.path.join(self.tmp.name, "tail.s")
+        with open(src, "w") as f:
+            f.write("        SECTION code,CODE\nmain:   BSR a\n        BSR b\n        RTS\na:      MOVEQ #1,D0\n        BEQ.S shared\n        BRA b\n"
+                    "b:      MOVEQ #2,D1\n        RTS\nshared: MOVEQ #9,D2\n        RTS\n")
+        hunk = os.path.join(self.tmp.name, "tail")
+        r = subprocess.run([M68KTOOL, "asm", src, "--hunk", hunk], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        work = os.path.join(self.tmp.name, "work_tail")
+        self.drive("init", "--fresh", "--hunk", hunk, "--m68ktool", M68KTOOL, work=work)
+        out, _ = self.drive("status", work=work)
+        self.assertIn("3 routines", out)
+        self.assertIn("   12 B  open", out)                                        # a: its own 12 bytes (BRA b is a word branch), not the hull that takes in b
+        out, _ = self.drive("show", "0x020006", work=work)                         # a
+        self.assertIn("size: 12 bytes in 2 parts", out)
+        self.assertIn("part 1 of 2", out)
+        self.assertIn("part 2 of 2", out)
+        self.assertIn("other code lies in between", out)
+        self.assertIn("b (0x02000E", out.replace("sub_02000E", "b"))             # the tail call is listed as a callee
+        out, _ = self.drive("show", "0x02000E", work=work)                         # b: called by the BSR of main and by the BRA of a
+        self.assertIn("Called from: 0x020002, 0x02000A", out)
+        # a case of the jump table in the example: reached through the table
+        out, _ = self.drive("show", "0x020080")                                    # cmd_hello of the example: LEA banner, BRA print (a tail call)
+        self.assertIn("reached through the jump table at 0x02007A (no direct call)", out)
+        self.assertIn("size: 6 bytes", out)                                         # print is not a part of it
+        self.assertIn("(0x02004A)", out)                                            # but it is a callee
+
     def test_errors_are_plain(self):
         work = os.path.join(self.tmp.name, "empty")
         _, err = self.drive("status", work=work, expect=1)
