@@ -38,7 +38,9 @@ struct DataGuess {
     enum class Kind {
         Text,      ///< a string (printable characters, usually NUL-terminated)
         Zeros,     ///< a run of zero bytes (padding, an empty buffer)
-        Pointers   ///< a table of longword addresses of strings
+        Pointers,  ///< a table of longword addresses of strings
+        Words,     ///< a table of 16 bit numbers: code walks through it with .W accesses
+        Longs      ///< a table of 32 bit numbers: code walks through it with .L accesses
     };
     Kind kind = Kind::Text;
     Address start = 0;

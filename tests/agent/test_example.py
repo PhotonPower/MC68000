@@ -106,13 +106,14 @@ class ExampleProgramTest(unittest.TestCase):
             self.assertEqual((tables[0]["kind"], tables[0]["entry_count"], tables[0]["followed"]), ("offset", 3, True))
             regions = s.call(cmd="data_regions", apply=True)
             kinds = sorted(r["kind"] for r in regions["regions"] if r.get("applied"))
-            self.assertEqual(kinds, ["text"] * 4)      # the four strings with a terminator
+            self.assertEqual(kinds, ["text"] * 4 + ["words"])      # the four strings with a terminator and the table of numbers
             s.call(cmd="analyze", entries=["0x020000"])
             listing = s.call(cmd="listing", verify=True)
             self.assertTrue(listing["verified"], listing.get("problem"))
             text = listing["listing"]
             self.assertIn('DC.B     "Hello from the MC68000 example",10,0', text)
             self.assertIn("jump table of the jump at", text)
+            self.assertIn("DC.W     $000A,$0014,$001E,$0028,$0032,$0000", text)     # the table the loop walks through with ADD.W (A2)+,D4 (and its padding word)
         finally:
             s.close()
 

@@ -104,14 +104,16 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         unsigned applied = 0;
         for (const DataGuess& g : guesses) {
             Json e = Json::object();
-            const char* kind = g.kind == DataGuess::Kind::Text ? "text" : g.kind == DataGuess::Kind::Pointers ? "pointers" : "zeros";
+            const char* kind = g.kind == DataGuess::Kind::Text ? "text" : g.kind == DataGuess::Kind::Pointers ? "pointers" : g.kind == DataGuess::Kind::Words ? "words"
+                               : g.kind == DataGuess::Kind::Longs ? "longs" : "zeros";
             e.set("addr", hexAddrS(g.start)).set("length", g.length).set("kind", kind).set("reason", g.reason);
             if (!g.preview.empty()) e.set("preview", g.preview);
             if (apply && g.kind != DataGuess::Kind::Zeros) {  // zero runs need no annotation: the listing writes them as DS.B
                 DataRegion region;
                 region.address = g.start;
                 region.length = g.length;
-                region.kind = g.kind == DataGuess::Kind::Text ? DataKind::Text : DataKind::Pointers;
+                region.kind = g.kind == DataGuess::Kind::Text ? DataKind::Text : g.kind == DataGuess::Kind::Words ? DataKind::Words
+                              : g.kind == DataGuess::Kind::Longs ? DataKind::Longs : DataKind::Pointers;
                 const bool done = !ann.setData(region).has_value();
                 e.set("applied", done);
                 if (done) ++applied;

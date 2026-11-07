@@ -172,12 +172,13 @@ Bytes, die weder Code noch annotierte Daten sind, typisiert `Analysis::guessData
 |---|---|
 | **Text** (`text`) | druckbare Zeichen (ASCII, auch Tab/CR/LF), mindestens 4, zu mindestens 60 % Buchstaben oder Leerzeichen; und entweder von einem Befehl referenziert (`LEA msg(PC),A0`), mit NUL abgeschlossen oder mindestens 12 Zeichen lang. Der Abschluss-NUL und ein Füll-NUL bis zur geraden Länge gehören dazu. Eine Folge wie `NuNuNuNu` (aufeinanderfolgende `RTS`) ist ohne Referenz kein Text |
 | **Tabelle von String-Zeigern** (`pointers`) | hinter einem Datenverweis Langwörter, die auf erkannte Strings zeigen (mindestens zwei, davon einer ein „echter“ String); ist die Tabelle erkannt, werden auch **kurze** Strings (1–3 Zeichen + NUL: „No“, „OK“) als Text erkannt, auf die sie zeigt (drei kurze Strings genügen ohne echten) |
+| **Zahlentabelle** (`words`, `longs`) | der Code lädt die Adresse in ein Adressregister (`LEA tab,A2`, `MOVE.L #tab,A2`) und läuft danach **wie durch ein Array** hindurch – `(A2)+` oder `(A2,Dn)` – mit **einer** Operandengröße (`.W` oder `.L`). Gemischte Größen oder nur feste Verschiebungen `d(A2)` deuten auf eine Struktur (kein Vorschlag), Byte-Zugriffe bleiben unberührt; mindestens zwei Einträge, nicht nur Nullen. Die Tabelle reicht bis zur nächsten referenzierten Adresse, zum nächsten Code oder zum Ende des Bereichs; die Beobachtung steht in `reason` (z. B. `walked through as words: ADD.W (A2)+,D4 at $02009A`). Dieser Hinweis aus dem Code zählt mehr als der Inhalt: Zufallszahlen, die wie Buchstaben aussehen, machen eine so durchlaufene Tabelle nicht zu Text – nur ein eindeutiger String (mindestens 8 Zeichen, fast nur Buchstaben, NUL-terminiert) gewinnt auch dann |
 | **Nullbereich** (`zeros`) | mindestens 16 Nullbytes (Füllung, leerer Puffer); braucht keine Annotation, das Listing schreibt `DS.B n` |
 
-`data_regions` liefert die Vorschläge (`addr`, `length`, `kind`, `reason`, bei Text `preview`); mit `apply: true` werden Text und Zeigertabellen als Datenbereiche (`ann_data`) eingetragen – Bereiche, die schon annotiert sind, bleiben unberührt.
+`data_regions` liefert die Vorschläge (`addr`, `length`, `kind`, `reason`, bei Text `preview`); mit `apply: true` werden Text, Zeigertabellen und Zahlentabellen als Datenbereiche (`ann_data`) eingetragen – Bereiche, die schon annotiert sind, bleiben unberührt.
 Danach erscheinen sie im Listing als `DC.B "Hello, Amiga world",0` (der Abschluss-NUL auf derselben Zeile, ein Füllbyte als `EVEN`) und `DC.L name1,name2,…`, und kein Analyseweg hält sie für Code. Der **Orchestrator** übernimmt die Vorschläge vor der
 Arbeit von selbst (`--no-auto-data` schaltet das ab); das Modell soll ihnen mit `mark_data` Namen geben. Die Erkennung ist eine Schätzung (ein Text ohne Referenz, NUL und Länge wird nicht gefunden; Daten, die wie Text aussehen, können fälschlich als Text gelten) – sie ändert nur Namen und Darstellung, nie die Bytes.
-**Nicht erkannt:** Tabellen von Zahlen (Wörter/Langwörter), Strukturen, Bitplanes und Grafikdaten, Musik/Samples; dafür bleibt `ann_data`.
+**Nicht erkannt:** Strukturen, Bitplanes und Grafikdaten, Musik/Samples, Tabellen, die nur über Byte-Zugriffe oder gar nicht im Code durchlaufen werden; dafür bleibt `ann_data`.
 
 ## Was noch fehlt
 
@@ -185,4 +186,4 @@ Arbeit von selbst (`--no-auto-data` schaltet das ab); das Modell soll ihnen mit 
 - **Mehr emulierte Bibliotheksfunktionen**: Nur wenige `exec`-/`dos`-Funktionen sind nachgebildet, der Rest wird protokolliert und liefert 0
   ([amiga500.md](amiga500.md)); Programme, die auf Ergebnisse anderer Bibliotheken (Grafik, Fenster) warten, nehmen ihren Fehlerpfad.
 - **Bildschirm**: keine Darstellung der Bitplanes; das Modell sieht nur Speicher und Registerprotokolle (Entscheidung, siehe Roadmap).
-- Erkennung weiterer **Datentypen** (Zahlentabellen, Strukturen, Bitplanes, Samples); derzeit hilft `ann_data` und der Hinweis auf Zeiger.
+- Erkennung weiterer **Datentypen** (Strukturen, Bitplanes, Samples); derzeit hilft `ann_data` und der Hinweis auf Zeiger.

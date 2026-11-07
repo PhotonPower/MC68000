@@ -7,6 +7,8 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Erkennung von Zahlentabellen** (`words`, `longs`) in `data_regions`: Der Code lädt die Adresse in ein Adressregister und läuft mit `(An)+` oder `(An,Dn)` in einer Operandengröße hindurch; Gemischtes, feste Verschiebungen, einzelne Einträge und Nullen
+  ergeben keinen Vorschlag. Das Listing zeigt sie als `DC.W`/`DC.L`-Zeilen. Der Hinweis aus dem Code geht vor dem Inhalt (druckbar aussehende Zahlen werden nicht zu Text), ein eindeutiger String geht vor der Zahlentabelle.
 - **Vorbereitung der Erprobung:** `--dry-run` im Orchestrator (Analyse ohne Modell, Bearbeitungsreihenfolge, Sprungtabellen, Datenbereiche, Bibliotheksaufrufe, Token-Schätzung mit Warnung);
   Beispielprogramm `examples/amiga/hello_amiga.s` (Bibliothek öffnen, Strings, Sprungtabelle, Zahlentabelle, Dezimalausgabe) mit Integrationstest über die ganze Kette; Anleitung `docs/walkthrough.md`.
 - **Standard-Modell** des Orchestrators jetzt `qwen3-vl:8b-instruct` (wie im Z80-Projekt; das vorher eingetragene Tag war ungeprüft); bei einem fehlenden Modell nennt die Fehlermeldung die installierten Modelle.

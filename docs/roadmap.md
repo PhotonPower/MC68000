@@ -67,7 +67,7 @@ Vorbereitet für die Erprobung: Dry-Run, Beispielprogramm und [Anleitung](walkth
 
 Offen:
 - **Erprobung mit einem echten Modell** (bisher nur Mock; zurückgestellt, bis der Emulator frei ist) und Feinschliff von Prompt und Parametern
-- Erkennung weiterer Datentypen (Zahlentabellen, Strukturen, Bitplanes, Samples); Text und String-Zeiger sind seit 0.5 erledigt
+- Erkennung weiterer Datentypen (Strukturen, Bitplanes, Samples); Text, String-Zeiger und Zahlentabellen sind seit 0.5 erledigt
 
 ## Danach (Ideen)
 

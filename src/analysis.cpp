@@ -1,6 +1,9 @@
 #include "m68k/analysis.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <map>
 #include <cstdlib>
 
 #include "m68k/decoder.hpp"
@@ -344,17 +347,112 @@ std::vector<DataGuess> Analysis::guessData(const std::function<bool(Address)>& c
     std::vector<DataGuess> out;
     std::vector<bool> used(to_ - from_, false);
 
+    // tables of numbers: code loads the address of the table into an address register and then walks through it
+    // (An)+ or (An,Xn) with one operand size. Several sizes, or only fixed displacements d(An), suggest a structure: no guess.
+    {
+        struct Use {
+            unsigned words = 0, longs = 0, bytes = 0, array = 0;
+            std::string how;
+        };
+        std::map<Address, Use> uses;
+        auto hexValue = [](const std::string& text, std::size_t from, std::int64_t& v) {
+            std::size_t i = from;
+            if (i >= text.size() || text[i] != '$') return false;
+            ++i;
+            std::size_t n = 0;
+            v = 0;
+            while (i < text.size() && std::isxdigit(static_cast<unsigned char>(text[i])) && n < 8) {
+                v = v * 16 + (std::isdigit(static_cast<unsigned char>(text[i])) ? text[i] - '0' : std::toupper(static_cast<unsigned char>(text[i])) - 'A' + 10);
+                ++i;
+                ++n;
+            }
+            return n > 0;
+        };
+        auto registerOf = [](const std::string& operands) -> int {   // "...,A2" -> 2 (A0-A6)
+            if (operands.size() < 3) return -1;
+            const std::size_t n = operands.size();
+            if (operands[n - 3] == ',' && operands[n - 2] == 'A' && operands[n - 1] >= '0' && operands[n - 1] <= '6') return operands[n - 1] - '0';
+            return -1;
+        };
+        for (auto it = code_.begin(); it != code_.end(); ++it) {
+            const Instruction& in = it->second;
+            const int reg = registerOf(in.operands);
+            if (reg < 0) continue;
+            std::optional<Address> table;
+            if (in.mnemonic == "LEA" && in.reference) table = *in.reference;
+            else if ((in.mnemonic == "MOVEA.L" || in.mnemonic == "MOVE.L") && in.operands.size() > 3 && in.operands[0] == '#') {
+                std::int64_t v;
+                if (hexValue(in.operands, 1, v)) table = static_cast<Address>(v) & kAddressMask;
+            }
+            if (!table || !inRange(*table) || (*table & 1U) || state_[*table - from_] != 0) continue;
+            const std::string r = "A" + std::to_string(reg);
+            auto next = it;
+            for (int step = 0; step < 16; ++step) {
+                ++next;
+                if (next == code_.end()) break;
+                const Instruction& nx = next->second;
+                if (nx.flow == FlowKind::Jump || nx.flow == FlowKind::Return || nx.flow == FlowKind::Call) break;   // the register may not mean the table any more
+                if (registerOf(nx.operands) == reg) break;                                                        // the register is overwritten
+                const std::size_t dot = nx.mnemonic.find('.');
+                if (dot == std::string::npos || nx.mnemonic.rfind("LEA", 0) == 0 || nx.mnemonic.rfind("PEA", 0) == 0 || nx.mnemonic.rfind("MOVEM", 0) == 0) continue;
+                const char sz = nx.mnemonic.back();
+                if (sz != 'B' && sz != 'W' && sz != 'L') continue;
+                const bool post = nx.operands.find("(" + r + ")+") != std::string::npos;
+                const bool indexed = nx.operands.find("(" + r + ",") != std::string::npos || nx.operands.find("," + r + ",") != std::string::npos;
+                const bool plain = nx.operands.find("(" + r + ")") != std::string::npos || nx.operands.find("(" + r + ",") != std::string::npos;
+                if (!post && !indexed && !plain) continue;
+                Use& u = uses[*table];
+                (sz == 'W' ? u.words : sz == 'L' ? u.longs : u.bytes) += 1;
+                if (post || indexed) {
+                    ++u.array;
+                    if (u.how.empty()) {
+                        char buf[24];
+                        std::snprintf(buf, sizeof buf, " at $%06X", next->first);
+                        u.how = nx.text() + buf;
+                    }
+                }
+            }
+        }
+        for (const auto& [start, u] : uses) {
+            const unsigned kinds = (u.words ? 1U : 0U) + (u.longs ? 1U : 0U) + (u.bytes ? 1U : 0U);
+            if (kinds != 1 || u.array == 0 || u.bytes != 0) continue;       // one size, walked through as an array (bytes are left alone)
+            const unsigned size = u.words ? 2 : 4;
+            if (!free(start) || used[start - from_]) continue;
+            {   // what the code walks through is a table of numbers, unless the bytes are unmistakably a string (copy loops move text with .W/.L too)
+                Address q = start;
+                unsigned letters = 0;
+                while (q < to_ && free(q) && textChar(mem_.read8(q))) letters += letterOrSpace(mem_.read8(q++)) ? 1U : 0U;
+                const unsigned chars = q - start;
+                if (chars >= 8 && letters * 10 >= chars * 8 && q < to_ && mem_.read8(q) == 0) continue;
+            }
+            Address e = start;
+            while (e < to_ && free(e) && !used[e - from_] && (e == start || !(refs_.count(e) || jumpTargets_.count(e) || entries_.count(e)))) ++e;
+            const unsigned length = (e - start) / size * size;
+            if (length < 2 * size) continue;                                 // a table has at least two entries
+            bool allZero = true;
+            for (unsigned i = 0; i < length && allZero; ++i) allZero = mem_.read8(start + i) == 0;
+            if (allZero) continue;                                           // an empty buffer: the zero run logic handles it
+            DataGuess g;
+            g.kind = size == 2 ? DataGuess::Kind::Words : DataGuess::Kind::Longs;
+            g.start = start;
+            g.length = length;
+            g.reason = std::string("walked through as ") + (size == 2 ? "words" : "longwords") + ": " + u.how;
+            out.push_back(g);
+            for (unsigned i = 0; i < length; ++i) used[start - from_ + i] = true;
+        }
+    }
+
     // strings
     for (Address a = from_; a < to_;) {
-        if (!free(a) || !textChar(mem_.read8(a))) {
+        if (!free(a) || used[a - from_] || !textChar(mem_.read8(a))) {
             ++a;
             continue;
         }
         Address e = a;
-        while (e < to_ && free(e) && textChar(mem_.read8(e))) ++e;
+        while (e < to_ && free(e) && !used[e - from_] && textChar(mem_.read8(e))) ++e;
         const unsigned chars = e - a;
         unsigned nul = 0;
-        while (e + nul < to_ && nul < 3 && free(e + nul) && mem_.read8(e + nul) == 0) ++nul;
+        while (e + nul < to_ && nul < 3 && free(e + nul) && !used[e + nul - from_] && mem_.read8(e + nul) == 0) ++nul;
         const bool terminated = nul > 0;
         const bool referenced = refs_.count(a) != 0;
         unsigned letters = 0;

@@ -144,6 +144,79 @@ int main() {
         CHECK(at(analyse(f).guessData(), f.sym("tab")) == nullptr);
     }
 
+    // ---- tables of numbers: found through the way the code walks through them ---------------------------------------------------------------------------------
+    {
+        // words: LEA tab,A0 then ADD.W (A0)+,D0 in a loop
+        const Built w(
+            "        ORG $1000\nstart:  LEA wtab(PC),A0\n        MOVEQ #3,D1\n        MOVEQ #0,D0\nloop:   ADD.W (A0)+,D0\n        DBRA D1,loop\n        RTS\n"
+            "wtab:   DC.W 3,1,4,1,5\n");
+        const std::vector<DataGuess> gw = analyse(w).guessData();
+        const DataGuess* t = at(gw, w.sym("wtab"));
+        CHECK(t != nullptr && t->kind == DataGuess::Kind::Words && t->length == 10);
+        if (t) CHECK(has(t->reason, "ADD.W (A0)+,D0"));
+        // longs through an index register, the address given as an immediate value
+        const Built l(
+            "        ORG $1000\nstart:  MOVE.L #ltab,A1\n        MOVE.L (A1,D2.W),D0\n        RTS\nltab:   DC.L 100000,200000,300000\n");
+        const std::vector<DataGuess> gl = analyse(l).guessData();
+        const DataGuess* tl = at(gl, l.sym("ltab"));
+        CHECK(tl != nullptr && tl->kind == DataGuess::Kind::Longs && tl->length == 12);
+        // no guess: mixed sizes (a structure), fixed displacements only, a single entry, an empty buffer, bytes, a table nobody walks through
+        const Built mixed(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        MOVE.L (A0)+,D1\n        RTS\ntab:    DC.W 1,2,3,4,5,6\n");
+        CHECK(analyse(mixed).guessData().empty());
+        const Built disp(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W 2(A0),D0\n        MOVE.W 4(A0),D1\n        RTS\ntab:    DC.W 1,2,3,4,5,6\n");
+        CHECK(analyse(disp).guessData().empty());
+        const Built single(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        RTS\ntab:    DC.W 7\n");
+        CHECK(analyse(single).guessData().empty());
+        const Built zero(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        RTS\ntab:    DC.W 0,0,0,0\n");
+        CHECK(analyse(zero).guessData().empty());
+        const Built bytes(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.B (A0)+,D0\n        RTS\ntab:    DC.B 1,2,3,4\n");
+        CHECK(analyse(bytes).guessData().empty());
+        const Built unused("        ORG $1000\nstart:  RTS\ntab:    DC.W 1,2,3,4,5,6\n");
+        CHECK(analyse(unused).guessData().empty());
+        // the register is reloaded or a call comes in between: the evidence stops
+        const Built reload(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        LEA other(PC),A0\n        MOVE.W (A0)+,D0\n        RTS\ntab:    DC.W 1,2,3,4\nother:  DC.W 9,9\n");
+        const std::vector<DataGuess> gr = analyse(reload).guessData();
+        CHECK(at(gr, reload.sym("tab")) == nullptr);
+        CHECK(at(gr, reload.sym("other")) != nullptr);
+        const Built withCall(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        BSR sub\n        MOVE.W (A0)+,D0\n        RTS\nsub:    RTS\ntab:    DC.W 1,2,3,4\n");
+        CHECK(analyse(withCall).guessData().empty());
+        // the table ends in front of the next referenced address
+        const Built ends(
+            "        ORG $1000\nstart:  LEA tab(PC),A0\n        MOVE.W (A0)+,D0\n        LEA next(PC),A1\n        RTS\ntab:    DC.W 1,2,3,4\nnext:   DC.W 9,9,9\n");
+        const std::vector<DataGuess> ge2 = analyse(ends).guessData();
+        const DataGuess* te = at(ge2, ends.sym("tab"));
+        CHECK(te != nullptr && te->length == 8);
+        // a table that is annotated already is left alone
+        const Analysis an = analyse(w);
+        const std::vector<DataGuess> gc = an.guessData([&](Address a) { return a == w.sym("wtab"); });
+        CHECK(at(gc, w.sym("wtab")) == nullptr);
+        // a copy loop that moves text with longword accesses does not make the text a table of numbers; random numbers that look like letters do not make a table text
+        const Built copy(
+            "        ORG $1000\nstart:  LEA msg(PC),A0\n        LEA buf(PC),A1\n        MOVEQ #5,D1\nloop:   MOVE.L (A0)+,(A1)+\n        DBRA D1,loop\n        RTS\n"
+            "msg:    DC.B \"Copy this whole sentence\",0\n        EVEN\nbuf:    DC.L 0,0,0,0,0,0\n");
+        const std::vector<DataGuess> gcp = analyse(copy).guessData();
+        const DataGuess* tc = at(gcp, copy.sym("msg"));
+        CHECK(tc != nullptr && tc->kind == DataGuess::Kind::Text);
+        // as an annotation the table is shown as words
+        Session s;
+        CHECK(ok(call(s, "{\"cmd\":\"asm\",\"source\":\"" + escape(
+            "        ORG $1000\nstart:  LEA wtab(PC),A0\n        MOVEQ #3,D1\n        MOVEQ #0,D0\nloop:   ADD.W (A0)+,D0\n        DBRA D1,loop\n        RTS\nwtab:   DC.W 3,1,4,1,5,9\n") + "\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        const Json r = call(s, "{\"cmd\":\"data_regions\",\"apply\":true}");
+        CHECK_EQ(r.find("regions")->items()[0].find("kind")->asString(), std::string("words"));
+        CHECK(ok(call(s, "{\"cmd\":\"analyze\",\"entries\":[\"start\"]}")));
+        const Json lst = call(s, "{\"cmd\":\"listing\",\"verify\":true}");
+        CHECK(lst.find("verified")->asBool());
+        CHECK(has(lst.find("listing")->asString(), "DC.W     $0003,$0001,$0004,$0001,$0005,$0009"));
+    }
+
     // ---- the session: data_regions, apply, listing --------------------------------------------------------------------------------------------------
     {
         Session s;
@@ -223,7 +296,7 @@ int main() {
                     DataRegion region;
                     region.address = g.start;
                     region.length = g.length;
-                    region.kind = g.kind == DataGuess::Kind::Text ? DataKind::Text : DataKind::Pointers;
+                    region.kind = g.kind == DataGuess::Kind::Text ? DataKind::Text : g.kind == DataGuess::Kind::Words ? DataKind::Words : g.kind == DataGuess::Kind::Longs ? DataKind::Longs : DataKind::Pointers;
                     (void)ann.setData(region);
                 }
             const std::vector<DataGuess> guessed = an.guessData();
@@ -246,6 +319,52 @@ int main() {
         }
         CHECK(total > 200);
         CHECK(found == total);
+    }
+
+    // ---- random number tables: kind and extent are exact, the listing verifies --------------------------------------------------------------------------------
+    {
+        std::mt19937 rng(555);
+        int words = 0, longs = 0;
+        for (int trial = 0; trial < 200; ++trial) {
+            const unsigned n = 2 + static_cast<unsigned>(rng() % 9);
+            const bool isLong = rng() % 2;
+            const bool indexed = rng() % 2;
+            std::string src = "        ORG $1000\nstart:  LEA tab(PC),A0\n        LEA tail(PC),A1\n        MOVEQ #3,D1\n        MOVEQ #0,D0\n";
+            src += indexed ? std::string("loop:   ADD.") + (isLong ? "L" : "W") + " (A0,D2.W),D0\n        ADDQ.W #2,D2\n        DBRA D1,loop\n"
+                           : std::string("loop:   ADD.") + (isLong ? "L" : "W") + " (A0)+,D0\n        DBRA D1,loop\n";
+            src += "        RTS\ntab:    DC." + std::string(isLong ? "L" : "W") + " ";
+            for (unsigned i = 0; i < n; ++i) src += (i ? "," : "") + std::to_string(1 + rng() % (isLong ? 100000 : 30000));
+            src += "\ntail:   DC.B 1,2,3\n";
+            const Built b(src);
+            const Analysis an = analyse(b);
+            const std::vector<DataGuess> g = an.guessData();
+            const DataGuess* t = at(g, b.sym("tab"));
+            CHECK(t != nullptr);
+            if (!t) continue;
+            CHECK(t->kind == (isLong ? DataGuess::Kind::Longs : DataGuess::Kind::Words));
+            CHECK_EQ(t->length, n * (isLong ? 4U : 2U));
+            (isLong ? longs : words)++;
+            Annotations ann;
+            for (const DataGuess& x : g) {
+                DataRegion region;
+                region.address = x.start;
+                region.length = x.length;
+                region.kind = x.kind == DataGuess::Kind::Text ? DataKind::Text : x.kind == DataGuess::Kind::Words ? DataKind::Words : x.kind == DataGuess::Kind::Longs ? DataKind::Longs : DataKind::Pointers;
+                if (x.kind != DataGuess::Kind::Zeros) (void)ann.setData(region);
+            }
+            Analysis an2(b.mem, b.from, b.to);
+            an2.addEntry(b.sym("start"));
+            an2.setDataBarrier([&ann](Address a) { return ann.dataCovering(a) != nullptr; });
+            an2.analyzeFlow();
+            ListingOptions lo;
+            lo.from = b.from;
+            lo.to = b.to;
+            const ListingResult r = renderListing(b.mem, an2, ann, lo);
+            CHECK(r.verified);
+            if (!r.verified) std::fprintf(stderr, "%s\n--\n%s\n", src.c_str(), r.text.c_str());
+        }
+        CHECK(words > 60);
+        CHECK(longs > 60);
     }
 
     // ---- random printable-biased bytes: no crash, annotations never break the listing -------------------------------------------------------------------------
@@ -276,7 +395,7 @@ int main() {
                 DataRegion region;
                 region.address = x.start;
                 region.length = x.length;
-                region.kind = x.kind == DataGuess::Kind::Text ? DataKind::Text : DataKind::Pointers;
+                region.kind = x.kind == DataGuess::Kind::Text ? DataKind::Text : x.kind == DataGuess::Kind::Words ? DataKind::Words : x.kind == DataGuess::Kind::Longs ? DataKind::Longs : DataKind::Pointers;
                 (void)ann.setData(region);
             }
             Analysis an2(mem, 0x1000, 0x1000 + size);
