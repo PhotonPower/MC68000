@@ -955,8 +955,8 @@ class Annotator:
         libs = Counter(lc["offset"] for r in routines for lc in r["library_calls"])
         if libs:
             say("library calls (JSR offset(A6)): " + ", ".join(f"{off} x{n}" for off, n in sorted(libs.items())) + "  (the library behind A6 is only known at run time)")
-        say(f'estimate: about {total} prompt tokens for the first message of every routine; the conversation grows with each reply '
-            f'(typically 3-8 replies per routine, at most {self.a.max_turns}).')
+        say(f'estimate: about {total} prompt tokens IN TOTAL for the first messages of all {len(todo)} routines to be processed '
+            f'(the largest, {largest[1]}, about {largest[0]}); the conversation grows with each reply (typically 3-8 replies per routine, at most {self.a.max_turns}).')
         ctx = self.a.num_ctx
         if largest[0] > ctx * 0.4:
             say(f'WARNING: the largest routine ({largest[1]}, ~{largest[0]} tokens) takes more than 40% of the context window ({ctx}); '
