@@ -33,3 +33,8 @@ m68k_*.snap
 m68k_*.bin
 m68k_*_failure.s
 m68k_mon_*.s
+
+# local reverse-engineering material (disk images, memory dumps, listings of other people's programs) must never be committed
+*.adf
+*.adz
+/local/
