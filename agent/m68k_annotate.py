@@ -1029,7 +1029,7 @@ def find_m68ktool(explicit):
     return found
 
 
-def main(argv=None):
+def build_parser():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--hunk", help="Amiga hunk executable")
@@ -1067,7 +1067,11 @@ def main(argv=None):
     p.add_argument("--max-turns", type=int, default=20, help="model replies per routine (several tool calls fit in one reply)")
     p.add_argument("--log", help="write every model message and tool result to this JSON-lines file")
     p.add_argument("--m68ktool", help="path to the m68ktool executable")
-    a = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     if not a.host.startswith("http"):
         a.host = "http://" + a.host
 

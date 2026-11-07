@@ -97,6 +97,29 @@ python3 agent/m68k_annotate.py --hunk hello_amiga --project hello.proj.json --ou
         --refine-model qwen3-vl:8b --refine-max-turns 25 --refine-max-tokens 12000 --report hello_bericht.md
 ```
 
+## 6b. Ohne Ollama: ein Agent oder ein Mensch übernimmt die Rolle des Modells
+
+Wo kein lokales Modell läuft, kann jemand mit einer Shell die Werkzeuge **von Hand** bedienen: `agent/m68k_drive.py` startet bei jedem Befehl den Emulator, baut den Zustand aus der
+Projektdatei neu auf, führt **einen** Schritt aus und beendet sich. Es sind dieselben Werkzeuge, Berichte und Prüfungen wie im Orchestrator, das Ergebnis ist also dasselbe Listing.
+
+```sh
+W=~/m68k-test/arbeit
+python3 agent/m68k_drive.py --work $W init --hunk hello_amiga --lang Deutsch   # einmal; weitere Optionen wie bei m68k_annotate.py
+python3 agent/m68k_drive.py --work $W status                                   # Routinen in der Reihenfolge, was offen ist, was als Nächstes kommt
+python3 agent/m68k_drive.py --work $W show 0x02004A                            # der Auftragstext, den ein Modell für diese Routine bekäme (--system: mit den Anweisungen)
+python3 agent/m68k_drive.py --work $W tool run_routine '{"addr":"0x02004A","setup":[{"addr":"0x020000"}],"registers":{"A0":"0x030000"},"memory":[{"addr":"0x030000","hex":"48692074686572650A00"}]}'
+python3 agent/m68k_drive.py --work $W tool document_routine '{"addr":"0x02004A","name":"print_string","summary":"...","confidence":"high"}'
+python3 agent/m68k_drive.py --work $W tool name_label '{"addr":"0x020052","name":"find_end"}'
+python3 agent/m68k_drive.py --work $W finish 0x02004A                          # prüft die Routine; die erste Prüfung kann zurückschicken, der zweite Aufruf gilt
+python3 agent/m68k_drive.py --work $W listing --out kommentiert.s              # das verifizierte Listing
+python3 agent/m68k_drive.py --work $W report                                   # was noch fehlt
+```
+
+`tool` nimmt jedes Werkzeug des Orchestrators (`get_listing`, `disassemble`, `read_memory`, `run_routine`, `reset_machine`, `name_label`, `document_routine`, `name_variable`, `mark_data`,
+`add_comment`, `finish_routine`) mit den Argumenten als **einem JSON-Objekt**. Im Arbeitsverzeichnis liegen `config.json` (Optionen), `project.json` (die Annotationen, nach jedem Befehl gespeichert) und
+`state.json` (welche Routinen abgeschlossen sind und bei welchen die erste Prüfung schon gelaufen ist). Eine Routine gilt als **fertig**, wenn sie dokumentiert ist **und** `finish` sie angenommen hat.
+Ein starker Agent ersetzt dabei nicht den Test mit einem kleinen Modell (er prüft die Werkzeugkette, nicht Prompt und Parameter für ein 8-Milliarden-Modell), liefert aber ein brauchbares Listing.
+
 ## 7. Woran man ein Problem erkennt
 
 | Beobachtung | Mögliche Ursache | Abhilfe |

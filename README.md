@@ -72,6 +72,8 @@ kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen geteste
 - lässt ein lokales Modell über **Ollama** ein Programm Routine für Routine (von den Blättern zur Wurzel) analysieren: lesen, im Emulator
   **ausprobieren**, benennen und kommentieren; mehrere Modelle nacheinander (schnell zuerst, gründlich für die Lücken), Vollständigkeits-
   prüfung, Projektdatei zum Abbrechen/Fortsetzen, Bericht; Ergebnis ist das **verifizierte** Listing. Nur Python-Standardbibliothek.
+- **ohne Modell:** `agent/m68k_drive.py` bedient dieselben Werkzeuge von Hand, ein Schritt je Aufruf (für einen Agenten oder einen Menschen,
+  der die Rolle des Modells übernimmt); [Anleitung](docs/walkthrough.md)
 
 ## Geplant
 

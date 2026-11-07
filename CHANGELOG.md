@@ -23,6 +23,8 @@ Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orch
 - Der Bericht von `run_routine` zählte den vom Aufrufer vorbereiteten Speicher als Änderung der Routine; gemessen wird jetzt ab dem Zustand nach der Vorbereitung.
 
 ### Hinzugefügt
+- **`agent/m68k_drive.py`:** dieselben Werkzeuge, Berichte und Prüfungen wie im Orchestrator, aber **von Hand bedient** (ein Schritt je Aufruf, Zustand in einem Arbeitsverzeichnis): `init`, `status`, `show`, `tool`, `finish`, `listing`, `report`.
+  Für einen Agenten oder einen Menschen, der die Rolle des Modells übernimmt, wenn kein Ollama läuft. Der Argument-Parser des Orchestrators ist dafür als `build_parser()` herausgelöst. Tests `tests/agent/test_drive.py`, Anleitung im Walkthrough (6b).
 - `run_routine` hat den Parameter **`setup`** (Routinen, die vorher auf derselben Maschine laufen, z. B. der Programmeinsprung): Routinen, die von Zustand abhängen, den anderer Code herstellt (Bibliotheksbasen, Handles, Variablen), waren sonst nicht testbar –
   `rollback` setzt auch die geöffneten Bibliotheken zurück, sodass sich der Zustand nicht von Hand schreiben lässt. Die Ausgaben und Aufrufe des `setup` zählen nicht zum Bericht.
 - Auf der Amiga-Maschine melden `run`, `step`, `step_over`, `run_until_return` und `call` die Zahl der Befehle, die aus **leerem Speicher** geholt wurden (`fetched_from_empty_memory`, `first_empty_fetch`); der Bericht von `run_routine` erklärt, was das meist bedeutet.

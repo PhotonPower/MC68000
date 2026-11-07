@@ -149,6 +149,11 @@ das Modell in die Irre führen würden; der Offset selbst ist ein guter Hinweis,
 `data`, `comments`, `block_comments`, `title`). Eine fehlerhafte Datei (doppelte oder ungültige Namen, unbekannte Art) wird mit
 Begründung abgelehnt. `machine` verwirft die Annotationen zusammen mit allem anderen.
 
+## Ohne Modell: von Hand oder durch einen Agenten
+
+`agent/m68k_drive.py` bedient dieselben Werkzeuge ohne Modell, ein Schritt je Aufruf (`init`, `status`, `show`, `tool`, `finish`, `listing`, `report`); der Zustand liegt in einem Arbeitsverzeichnis.
+Anleitung mit Beispielen: [walkthrough.md](walkthrough.md#6b-ohne-ollama-ein-agent-oder-ein-mensch-übernimmt-die-rolle-des-modells).
+
 ## Sprungtabellen
 
 Die Codefluss-Analyse erkennt Tabellen hinter indizierten Sprüngen, damit ihre Ziele als Code analysiert werden (sonst blieben sie unentdeckt, weil niemand sie direkt aufruft):
