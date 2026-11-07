@@ -40,7 +40,7 @@ examples/hello.s:17: error: unknown instruction or directive 'MOVEE'
 
 | Option            | Bedeutung                                                                      |
 |-------------------|--------------------------------------------------------------------------------|
-| `--org <Adresse>` | Ladeadresse einer Raw-Binärdatei oder eines **Amiga-Hunk-Programms** (Standard `0`; Hunks werden relokiert, Symbole werden Labels); S-Record-Dateien tragen ihre Adressen selbst |
+| `--org <Adresse>` | Ladeadresse einer Raw-Binärdatei (Standard `0`) oder eines **Amiga-Hunk-Programms** (Standard **`0x20000`**, wie bei `load_file` und beim Monitor-Befehl `l`; Hunks werden relokiert, Symbole werden Labels); S-Record-Dateien tragen ihre Adressen selbst. Eine **Objektdatei** (beginnt mit `HUNK_UNIT`, wie sie vasm schreibt) wird abgelehnt: erst binden (z. B. mit vlink). Die Ablaufanalyse (`-e`, Hunk-Einsprung) folgt auch **Sprungtabellen** (`JMP d(PC,Dn)`): ihre Fälle erscheinen als Code |
 | `--start <Adr.>`, `--end <Adr.>` | Bereich, der ausgegeben wird (Standard: das ganze Abbild; `--end` ist exklusiv) |
 | `-e <Adresse>`    | zusätzlicher Einstiegspunkt der Ablaufanalyse (mehrfach möglich)               |
 | `-c <Datei>`      | Kommentardatei ([formats.md](formats.md)); kommentierte Adressen sind Einstiegspunkte |

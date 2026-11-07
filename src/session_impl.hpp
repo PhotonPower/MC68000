@@ -24,7 +24,6 @@ inline constexpr std::uint64_t kDefaultLimit = 1000000;
 /// Upper bound for max_instructions and for `step n`: a client must not be able to hang the server with an endless loop and a huge limit.
 inline constexpr std::int64_t kMaxLimit = 100000000;
 inline constexpr Address kGenericStackTop = 0x80000;
-inline constexpr Address kDefaultHunkBase = 0x20000;
 inline constexpr Address kReturnSentinel = 0xFFFFF0;
 inline constexpr std::size_t kMaxRead = 4096;
 inline constexpr std::size_t kMaxWrite = 65536;

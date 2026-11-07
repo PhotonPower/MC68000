@@ -4,6 +4,7 @@
 
 #include "m68k/analysis.hpp"
 #include "m68k/assembler.hpp"
+#include "m68k/disassembler.hpp"
 #include "m68k/listing.hpp"
 #include "m68k/annotations.hpp"
 #include "m68k/session.hpp"
@@ -147,6 +148,26 @@ int main() {
             CHECK_EQ(ptr->slots.size(), std::size_t{3});
         }
         CHECK(an.at(b.sym("p0")) == nullptr);            // not followed: the handlers are not code (yet)
+    }
+
+    // ---- m68ktool dis (the Disassembler class) follows the tables as well: their cases are code, not DC.B ----------------------------------------------------
+    {
+        const Built b(kProgram);
+        Disassembler dis(b.mem, b.from, b.to);
+        dis.addEntry(b.sym("start"));
+        dis.addEntry(b.sym("dispatch"));
+        dis.addEntry(b.sym("callit"));
+        dis.analyzeFlow();
+        const std::string text = dis.render();
+        CHECK(has(text, "MOVEQ    #$02,D2"));                  // the last case of the branch table
+        CHECK(has(text, "MOVEQ    #$0D,D3"));                  // the last case of the offset table
+        CHECK(has(text, "BRA.W    L_001034") || has(text, "BRA.S    L_001034") || has(text, "BRA"));   // the entries of the branch table are instructions
+        CHECK(!has(text, "DC.B     $70,$02"));                 // not shown as bytes any more
+        // without the entry of the dispatching routine there is nothing to find: the table stays data
+        Disassembler lonely(b.mem, b.from, b.to);
+        lonely.addEntry(b.sym("callit"));
+        lonely.analyzeFlow();
+        CHECK(!has(lonely.render(), "MOVEQ    #$0D,D3"));
     }
 
     // ---- an annotated pointer region is followed ------------------------------------------------------------------------------------------------

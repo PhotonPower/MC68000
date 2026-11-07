@@ -2,8 +2,11 @@
 
 > **Umgesetzt** (`m68k::Amiga500`, `m68k::AmigaOs`). Entscheidung: Das Projekt zielt auf den **Amiga 500** mit MC68000 (nicht 68008/68010,
 > nicht höhere Amiga-Modelle). Der Emulator-Kern bleibt maschinenunabhängig; alles Amiga-Spezifische
-> liegt als Plattformprofil (Speicherkarte, Schreibprotokoll der Custom-/CIA-Register) und als OS-Emulation darüber. Alle Adressen, Registernamen,
-> Funktionsnamen und Offsets stammen **aus dem Gedächtnis** und sind gegen das *Amiga Hardware Reference Manual* bzw. das NDK zu prüfen.
+> liegt als Plattformprofil (Speicherkarte, Schreibprotokoll der Custom-/CIA-Register) und als OS-Emulation darüber. **Geprüft** (2026-11, von einem
+> unabhängigen Agenten gegen das NDK 3.2 R4, die 1.3-Includes und `.fd`-Dateien der Amiga Developer CD 1.2 und das *Hardware Reference Manual*): Namen, Offsets und
+> Registerbelegungen aller emulierten und benannten `exec`-/`dos`-Funktionen (alle 50 stimmen), die Konstanten und Strukturen in `amiga_os.cpp`, die Custom-Register-Namen
+> und -Adressen und die CIA-Adressen. **Nicht geprüft** oder nur indirekt belegt: die Größe des ROM-Overlay-Fensters (512 KiB, keine Quelle), die Polarität des OVL-Bits
+> (aus dem HRM erschlossen, nicht wörtlich angegeben) und das echte Verhalten auf einem Kickstart 1.3.
 
 ## Speicherlayout (Grundausstattung)
 
@@ -42,11 +45,11 @@ Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ans
 
   | Bibliothek | Funktion (Offset) | Verhalten |
   |---|---|---|
-  | exec | `AllocMem` (−198), `FreeMem` (−210) | First-Fit im Heap, auf 8 Byte gerundet, `MEMF_CLEAR` (`$10000`) füllt mit 0; Größe 0 oder zu groß → 0; `FreeMem` eines unbekannten Blocks wird protokolliert |
-  | exec | `AllocVec` (−684), `FreeVec` (−690) | wie oben, Größe steht 8 Byte vor dem Zeiger |
-  | exec | `AvailMem` (−216) | freie Bytes im Heap (`MEMF_LARGEST` = `$20000`: größter freier Block); die Flags für Chip/Fast spielen keine Rolle (es gibt einen Heap) |
+  | exec | `AllocMem` (−198), `FreeMem` (−210) | First-Fit im Heap, auf 8 Byte gerundet, `MEMF_CLEAR` (`$10000`) füllt mit 0; Größe 0 oder zu groß → 0; **`MEMF_FAST` (`4`) auf einer Maschine ohne Fast-RAM → 0** (wie im Autodoc); `FreeMem` eines unbekannten Blocks wird protokolliert. Mit Fast-RAM in der Maschine gelingt `MEMF_FAST`, der Heap liegt aber weiterhin im Chip-RAM |
+  | exec | `AllocVec` (−684), `FreeVec` (−690) | wie oben, Größe steht 8 Byte vor dem Zeiger. **Erst ab V36 (Kickstart 2.0):** im Kickstart 1.2/1.3 eines Amiga 500 gibt es sie nicht (`libcalls` meldet `min_version: 36`). Die Bibliotheken werden mit `lib_Version` 34 angelegt, die Emulation führt diese beiden Funktionen trotzdem aus |
+  | exec | `AvailMem` (−216) | freie Bytes im Heap (`MEMF_LARGEST` = `$20000`: größter freier Block); `MEMF_FAST` ohne Fast-RAM → 0 (Folgerung aus dem Autodoc, dort nicht ausdrücklich); sonst spielen die Flags für Chip/Fast keine Rolle (es gibt einen Heap) |
   | exec | `CopyMem` (−624), `CopyMemQuick` (−630) | `A0` Quelle, `A1` Ziel, `D0` Länge; überlappende Blöcke werden richtig kopiert |
-  | exec | `AddHead` (−240), `AddTail` (−246), `Insert` (−234), `Remove` (−252), `RemHead` (−258), `RemTail` (−264) | echte `List`/`Node`-Strukturen im Speicher (`lh_Head` 0, `lh_Tail` 4, `lh_TailPred` 8; `ln_Succ` 0, `ln_Pred` 4); `RemHead`/`RemTail` liefern bei leerer Liste 0; `Insert` mit `A2` = 0 fügt am Anfang ein |
+  | exec | `AddHead` (−240), `AddTail` (−246), `Insert` (−234), `Remove` (−252), `RemHead` (−258), `RemTail` (−264) | echte `List`/`Node`-Strukturen im Speicher (`lh_Head` 0, `lh_Tail` 4, `lh_TailPred` 8; `ln_Succ` 0, `ln_Pred` 4); `RemHead`/`RemTail` liefern bei leerer Liste 0; `Insert` mit `A2` = 0 fügt am Anfang ein; `Remove` ist im Autodoc `void` und lässt `D0` unverändert |
   | exec | `Enqueue` (−270), `FindName` (−276) | `Enqueue` sortiert nach `ln_Pri` (vorzeichenbehaftet): hinter den Knoten gleicher Priorität, vor dem ersten niedrigerer; `FindName` vergleicht `ln_Name` mit Groß-/Kleinschreibung, beginnt hinter `A0` (Liste oder Knoten) |
   | exec | `OpenLibrary` (−552), `OldOpenLibrary` (−408), `CloseLibrary` (−414) | jede Bibliothek wird geöffnet (leere Sprungtabelle); gleicher Name → gleiche Basis; die Version wird ignoriert |
   | exec | `FindTask` (−294) | liefert den Prozess-Knoten (`ln_Type` = 13), auch für einen Namen |
@@ -64,9 +67,9 @@ Bibliotheksaufrufen **vorbeizulaufen**, damit man sich die Speicherwirkungen ans
   AmigaDOS: `D0`=`A0`=0, Stapel unter den OS-Strukturen, **Rücksprungadresse auf einen Exit-Stub**: das abschließende `RTS` beendet den Lauf mit
   `stop: "exit"` und der Meldung `the program returned to the system (D0 = rc)`.
 - **Zustand:** Belegungen, geöffnete Bibliotheken, Konsole und `IoErr` gehören zu den Checkpoints (Rollback stellt sie wieder her).
-- **Ohne Gewähr:** Funktionsnamen und Offsets stammen aus den Amiga-Include-Dateien (`exec_lib.fd`, `dos_lib.fd`) **aus dem Gedächtnis**;
-  bitte vor dem Verlassen darauf gegen das NDK prüfen. Die Registerbelegungen (z. B. `AllocMem`: D0 = Größe, D1 = Anforderungen; `Write`: D1 =
-  Datei, D2 = Puffer, D3 = Länge; `AddHead`: A0 = Liste, A1 = Knoten) ebenso.
+- **Geprüft:** Namen, Offsets und Registerbelegungen aller Einträge von `kExec`/`kDos` stimmen mit `exec_lib.fd`/`dos_lib.fd` aus NDK 3.2 R4 und aus den 1.3-Includes überein.
+  Mindestversion: alle V33 oder älter (Kickstart 1.2), außer `AllocVec`/`FreeVec` (V36). Auf einem Amiga 500 mit Kickstart 1.2/1.3 sind das die Funktionen, die ein Programm
+  dieser Zeit nicht benutzen darf; das Aufrufprotokoll (`libcalls`, `min_version`) und die Berichte des Orchestrators weisen darauf hin.
 
 ## Dateiformate
 

@@ -1,5 +1,7 @@
 #include "m68k/disassembler.hpp"
 
+#include "m68k/analysis.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -70,11 +72,32 @@ void Disassembler::follow(Address a, std::vector<Address>& work) {
 
 void Disassembler::analyzeFlow() {
     std::vector<Address> work(entries_.rbegin(), entries_.rend());
-    while (!work.empty()) {
-        const Address a = work.back();
-        work.pop_back();
-        follow(a, work);
+    auto drain = [&] {
+        while (!work.empty()) {
+            const Address a = work.back();
+            work.pop_back();
+            follow(a, work);
+        }
+    };
+    drain();
+    // A jump through a table (JMP/JSR d(PC,Dn)) has no direct target. The code flow analysis recognises the table (docs/reverse-engineering.md): the cases
+    // of a branch or offset table are code that nothing calls, and the entries of a branch table are code themselves.
+    Analysis analysis(memory_, start_, end_);
+    for (const Address e : entries_) analysis.addEntry(e);
+    analysis.analyzeFlow();
+    for (const JumpTable& table : analysis.jumpTables()) {
+        if (!table.followed) continue;
+        if (inRange(table.table)) labels_.insert(table.table);
+        if (table.kind == JumpTable::Kind::Branch)
+            for (const Address slot : table.slots)
+                if (inRange(slot)) work.push_back(slot);
+        for (const Address target : table.targets)
+            if (inRange(target)) {
+                labels_.insert(target);
+                work.push_back(target);
+            }
     }
+    drain();
 }
 
 void Disassembler::analyzeLinear() {

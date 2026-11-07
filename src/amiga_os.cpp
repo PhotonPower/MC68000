@@ -7,6 +7,7 @@ namespace m68k {
 
 namespace {
 
+constexpr Long kMemfFast = 0x4;        // exec/memory.h: MEMF_FAST (1L<<2)
 constexpr Long kMemfClear = 0x10000;
 constexpr Long kFileOutput = 0x1000;  // the BPTR returned by Output()
 constexpr Long kFileInput = 0x1004;   // ... and by Input()
@@ -16,6 +17,7 @@ constexpr std::size_t kMaxLog = 4096;
 struct Func {
     int offset;
     const char* name;
+    unsigned version = 33;   // first library version that has the function (33 = Kickstart 1.2, 36 = Kickstart 2.0): exec_lib.fd / dos_lib.fd of the NDK
 };
 
 // exec.library vectors (name known; only some are emulated)
@@ -26,7 +28,7 @@ const Func kExec[] = {
     {-294, "FindTask"}, {-318, "Wait"}, {-324, "Signal"}, {-354, "AddPort"}, {-360, "RemPort"}, {-366, "PutMsg"},
     {-372, "GetMsg"}, {-378, "ReplyMsg"}, {-384, "WaitPort"}, {-408, "OldOpenLibrary"}, {-414, "CloseLibrary"},
     {-444, "OpenDevice"}, {-450, "CloseDevice"}, {-456, "DoIO"}, {-462, "SendIO"}, {-552, "OpenLibrary"},
-    {-684, "AllocVec"}, {-690, "FreeVec"},
+    {-684, "AllocVec", 36}, {-690, "FreeVec", 36},   // NOT in the Kickstart 1.2/1.3 of an original Amiga 500
 };
 // dos.library vectors
 const Func kDos[] = {
@@ -35,18 +37,24 @@ const Func kDos[] = {
     {-156, "UnLoadSeg"}, {-198, "Delay"},
 };
 
-std::string tableName(const Func* table, std::size_t n, int offset) {
+const Func* findFunc(const std::string& library, int offset) {
+    const Func* table = library == "exec.library" ? kExec : library == "dos.library" ? kDos : nullptr;
+    const std::size_t n = library == "exec.library" ? sizeof kExec / sizeof kExec[0] : library == "dos.library" ? sizeof kDos / sizeof kDos[0] : 0;
     for (std::size_t i = 0; i < n; ++i)
-        if (table[i].offset == offset) return table[i].name;
-    return "";
+        if (table[i].offset == offset) return &table[i];
+    return nullptr;
 }
 
 }  // namespace
 
 std::string AmigaOs::functionName(const std::string& library, int offset) {
-    if (library == "exec.library") return tableName(kExec, sizeof kExec / sizeof kExec[0], offset);
-    if (library == "dos.library") return tableName(kDos, sizeof kDos / sizeof kDos[0], offset);
-    return "";
+    const Func* f = findFunc(library, offset);
+    return f ? f->name : "";
+}
+
+unsigned AmigaOs::functionVersion(const std::string& library, int offset) {
+    const Func* f = findFunc(library, offset);
+    return f ? f->version : 0;
 }
 
 AmigaOs::AmigaOs(Memory& memory, Amiga500& amiga) : mem_(memory), amiga_(amiga) {
@@ -183,6 +191,7 @@ bool AmigaOs::onExecute(Cpu& cpu) {
     call.library = lib;
     call.offset = -6 * static_cast<int>(n);
     call.function = functionName(lib, call.offset);
+    call.minVersion = functionVersion(lib, call.offset);
     call.caller = rd32(r.a[7]);
     call.d0 = r.d[0]; call.d1 = r.d[1]; call.d2 = r.d[2]; call.d3 = r.d[3];
     call.a0 = r.a[0]; call.a1 = r.a[1];
@@ -202,7 +211,14 @@ void AmigaOs::dispatch(Cpu& cpu, LibCall& c, const std::string& lib) {
         c.emulated = true;
     };
     if (lib == "exec.library") {
+        // exec autodoc AllocMem: "If MEMF_FAST is set, AllocMem() will fail on machines that only have chip memory!"
+        // The heap of this emulation is chip RAM in any case, so MEMF_FAST is satisfied only if the machine has fast RAM at all (and then it is a chip address).
+        const bool fastWithoutFastRam = (r.d[1] & kMemfFast) != 0 && amiga_.config().fastKb == 0;
         if (f == "AllocMem") {
+            if (fastWithoutFastRam) {
+                c.note = "MEMF_FAST, but the machine has no fast memory";
+                return done(0);
+            }
             const Address a = allocate(r.d[0], r.d[1]);
             if (a && (r.d[1] & kMemfClear))
                 for (Long i = 0; i < r.d[0]; ++i) amiga_.writeByte(a + i, 0);
@@ -215,7 +231,11 @@ void AmigaOs::dispatch(Cpu& cpu, LibCall& c, const std::string& lib) {
             release(r.a[1]);
             return done(r.d[0]);
         }
-        if (f == "AllocVec") {
+        if (f == "AllocVec") {   // V36 (Kickstart 2.0)
+            if (fastWithoutFastRam) {
+                c.note = "MEMF_FAST, but the machine has no fast memory";
+                return done(0);
+            }
             const Address a = allocate(r.d[0] + 8, r.d[1]);
             if (a) {
                 wr32(a, r.d[0] + 8);
@@ -252,6 +272,7 @@ void AmigaOs::dispatch(Cpu& cpu, LibCall& c, const std::string& lib) {
                 at = std::max(at, static_cast<Address>(a + ((n + 7U) & ~7U)));
             }
             if (heapEnd_ > at) total += heapEnd_ - at, largest = std::max(largest, heapEnd_ - at);
+            if (fastWithoutFastRam) return done(0);   // no fast memory at all
             return done((r.d[1] & 0x20000U) ? largest : total);
         }
         if (f == "CopyMem" || f == "CopyMemQuick") {   // A0 source, A1 destination, D0 size in bytes; overlapping blocks are copied correctly
@@ -284,7 +305,7 @@ void AmigaOs::dispatch(Cpu& cpu, LibCall& c, const std::string& lib) {
             const Address node = r.a[1], next = rd32(node), prev = rd32(node + 4);
             wr32(prev, next);
             wr32(next + 4, prev);
-            return done(node);
+            return done(r.d[0]);   // void in the autodocs: D0 stays as it was
         }
         if (f == "RemHead" || f == "RemTail") {
             const Address list = r.a[0];

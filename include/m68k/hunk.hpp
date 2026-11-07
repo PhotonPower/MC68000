@@ -30,6 +30,12 @@ struct HunkImage {
 
 /// True if `bytes` starts with the HUNK_HEADER id ($000003F3).
 [[nodiscard]] bool looksLikeHunkFile(const std::vector<Byte>& bytes);
+/// True for a linker input (an object file that starts with HUNK_UNIT, as vasm and other assemblers write them): it has to be linked first
+/// (for example with vlink) and cannot be loaded or disassembled as a program.
+[[nodiscard]] bool looksLikeHunkObject(const std::vector<Byte>& bytes);
+/// Where a hunk file is loaded if no address is given (load_file, the monitor's `l`, `m68ktool dis`).
+inline constexpr Address kDefaultHunkBase = 0x20000;
+inline constexpr const char* kHunkObjectMessage = "an object file (HUNK_UNIT), not a program: link it first (for example with vlink -bamigahunk)";
 
 /// Parses an AmigaDOS load file and relocates it: the hunks are placed one after the other starting
 /// at `base`, each aligned to 4 bytes, and every HUNK_RELOC32 offset gets the base of its target

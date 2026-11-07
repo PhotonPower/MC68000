@@ -285,6 +285,14 @@ int main() {
         CHECK(!ok(call(s, "{\"cmd\":\"load_file\",\"file\":\"m68k_session_raw.tmp\"}")));  // raw needs an address
         std::remove("m68k_session_raw.tmp");
         CHECK(!ok(call(s, "{\"cmd\":\"load_file\",\"file\":\"does_not_exist.bin\",\"addr\":0}")));
+        // an object file (HUNK_UNIT) says what to do instead of being read as data; as type raw it can still be loaded on purpose
+        writeBinaryFile("m68k_session_obj.tmp", {0x00, 0x00, 0x03, 0xE7, 0x00, 0x00, 0x00, 0x02, 0x61, 0x62});
+        const Json objReply = call(s, "{\"cmd\":\"load_file\",\"file\":\"m68k_session_obj.tmp\",\"addr\":\"0x4000\"}");
+        CHECK(!ok(objReply));
+        CHECK(str(objReply, "error").find("HUNK_UNIT") != std::string::npos);
+        CHECK(!ok(call(s, "{\"cmd\":\"load_file\",\"file\":\"m68k_session_obj.tmp\",\"type\":\"hunk\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"load_file\",\"file\":\"m68k_session_obj.tmp\",\"type\":\"raw\",\"addr\":\"0x4000\"}")));
+        std::remove("m68k_session_obj.tmp");
 
         // S-records set the PC from the termination record
         writeTextFile("m68k_session.s19", formatSRecords({{0x5000, {0x70, 0x07, 0x4E, 0x75}}}, 0x5000));

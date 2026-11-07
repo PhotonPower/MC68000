@@ -356,6 +356,7 @@ Json Session::Impl::cmdLoadFile() {
     const std::string file = str("file");
     std::string type = arg("type") ? str("type") : "auto";
     const std::vector<Byte> bytes = readBinaryFile(file);
+    if (looksLikeHunkObject(bytes) && type != "raw") throw SessionError(kHunkObjectMessage);
     if (type == "auto") type = looksLikeSRecordFile(file) ? "srec" : looksLikeHunkFile(bytes) ? "hunk" : "raw";
     Json j = Json::object();
     Registers& r = s.cpu_->registers();
@@ -656,6 +657,7 @@ Json Session::Impl::cmdOs(const std::string& cmd) {
         Json e = Json::object();
         e.set("library", c.library).set("offset", c.offset);
         if (!c.function.empty()) e.set("function", c.function);
+        if (c.minVersion) e.set("min_version", c.minVersion);
         e.set("emulated", c.emulated).set("caller", hexAddr(c.caller));
         Json args = Json::object();
         args.set("D0", hex32(c.d0)).set("D1", hex32(c.d1)).set("D2", hex32(c.d2)).set("D3", hex32(c.d3));

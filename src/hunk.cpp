@@ -54,6 +54,10 @@ struct Pending {
 
 }  // namespace
 
+bool looksLikeHunkObject(const std::vector<Byte>& b) {
+    return b.size() >= 8 && b[0] == 0 && b[1] == 0 && b[2] == 0x03 && b[3] == 0xE7;   // HUNK_UNIT
+}
+
 bool looksLikeHunkFile(const std::vector<Byte>& b) {
     return b.size() >= 4 && b[0] == 0 && b[1] == 0 && b[2] == 0x03 && b[3] == 0xF3;
 }

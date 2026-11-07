@@ -65,7 +65,7 @@ void printUsage(std::ostream& out) {
         << "  (without -o/--srec the result is written to <source>.bin)\n"
         << "\n"
         << "dis options:\n"
-        << "  --org <addr>     load address of a raw binary or of an Amiga hunk file (default 0);\n"
+        << "  --org <addr>     load address of a raw binary (default 0) or of an Amiga hunk file (default 0x20000, as in load_file);\n"
         << "                   S-record files carry their own addresses\n"
         << "  --start <addr>   first address to disassemble (default: start of the image)\n"
         << "  --end <addr>     address after the last byte (default: end of the image)\n"
@@ -219,8 +219,13 @@ int cmdDis(Args args) {
         }
     } else {
         const std::vector<m68k::Byte> bytes = m68k::readBinaryFile(image);
+        if (m68k::looksLikeHunkObject(bytes)) {
+            std::cerr << image << ": " << m68k::kHunkObjectMessage << "\n";
+            return kExitFailed;
+        }
         if (m68k::looksLikeHunkFile(bytes)) {
-            // AmigaDOS executable: relocate to --org, use the hunk symbols as label names
+            // AmigaDOS executable: relocate to --org (default: where load_file puts it), use the hunk symbols as label names
+            if (!haveOrg) org = m68k::kDefaultHunkBase;
             const m68k::HunkImage hunk = m68k::loadHunkFile(bytes, org);
             m68k::loadSegments(memory, hunk.segments);
             lo = hunk.hunks.empty() ? org : hunk.hunks.front().address;

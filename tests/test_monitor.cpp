@@ -280,6 +280,12 @@ int main() {
         CHECK(readBinaryFile("m68k_mon_save.bin") == (std::vector<Byte>{0x4E, 0x75, 0x4E, 0x71}));
         CHECK(isError(m.execute("sv m68k_mon_save.bin 4003 4000")));
         std::remove("m68k_mon_raw.bin");
+        // an object file (HUNK_UNIT) is not read as raw data
+        writeBinaryFile("m68k_mon_obj.bin", {0x00, 0x00, 0x03, 0xE7, 0x00, 0x00, 0x00, 0x02, 0x61, 0x62});
+        const std::string obj = m.execute("l m68k_mon_obj.bin 4000");
+        CHECK(isError(obj));
+        CHECK(has(obj, "HUNK_UNIT"));
+        std::remove("m68k_mon_obj.bin");
         std::remove("m68k_mon_save.bin");
 
         writeTextFile("m68k_mon.s19", formatSRecords({{0x5000, {0x70, 0x01, 0x4E, 0x75}}}, 0x5000));

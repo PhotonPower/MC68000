@@ -172,6 +172,30 @@ class ExampleProgramTest(unittest.TestCase):
         finally:
             s.close()
 
+    def test_dis_of_a_hunk_file(self):
+        """`m68ktool dis` puts a hunk file where load_file does ($20000), so that the absolute address 4 stays an address and is not a label in the
+        code; it follows the jump table (the cases are code); an object file is refused with a hint."""
+        r = subprocess.run([M68KTOOL, "dis", self.named], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = r.stdout
+        self.assertIn("020000  48E7 3F3E", out)
+        self.assertIn("MOVEA.L  $0004.W,A6", out)
+        self.assertNotIn("L_000004", out)
+        self.assertIn("JMP      cmdbase(PC,D0.W)", out)
+        self.assertIn("cmd_sum:", out)
+        self.assertIn("ADD.W    (A2)+,D4", out)         # the body of a case of the table is code
+        self.assertNotIn("DC.B     $70,$02", out)
+        # --org still wins
+        r2 = subprocess.run([M68KTOOL, "dis", self.named, "--org", "0x30000"], capture_output=True, text=True)
+        self.assertIn("030000  48E7 3F3E", r2.stdout)
+        obj = os.path.join(self.tmp.name, "object.o")
+        with open(obj, "wb") as f:
+            f.write(bytes([0, 0, 3, 0xE7, 0, 0, 0, 2, 0x61, 0x62]))
+        r3 = subprocess.run([M68KTOOL, "dis", obj], capture_output=True, text=True)
+        self.assertEqual(r3.returncode, 1)
+        self.assertIn("HUNK_UNIT", r3.stderr)
+        self.assertIn("vlink", r3.stderr)
+
     def test_dry_run_of_the_orchestrator_contacts_no_model(self):
         mock = MockOllama({})
         url = mock.start()

@@ -512,6 +512,7 @@ class Tools:
                 name = c.get("function") or f'(unknown function at offset {c["offset"]})'
                 a = c["args"]
                 out.append(f'  {c["library"]} {c["offset"]} {name}' + ("" if c["emulated"] else " [NOT emulated: only logged, returned D0=0]") +
+                           (" [V36+: not in Kickstart 1.2/1.3]" if c.get("min_version", 0) >= 36 else "") +
                            f' D0={a["D0"][2:]} D1={a["D1"][2:]} A0={a["A0"][2:]} A1={a["A1"][2:]} -> D0={c["result"][2:]}' +
                            (f' [{c["note"].strip()}]' if c.get("note") else "") + f' called from {c["caller"]}')
             if len(calls) > 12:

@@ -12,6 +12,12 @@ Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulato
 Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orchestrator ist noch nicht mit einem echten Modell erprobt (siehe docs/roadmap.md).
 
 ### Behoben
+- **`m68ktool dis`** (Befund eines Vergleichs mit vasm/vlink): Die Ablaufanalyse folgt jetzt **Sprungtabellen**; ihre Fälle (`cmd_hello`, `cmd_sum`, …) wurden vorher als `DC.B` angezeigt. Hunk-Dateien werden standardmäßig an `0x20000` geladen
+  (wie bei `load_file` und im Monitor), nicht an 0: Dort stand `4.W` (ExecBase) als Label `L_000004` mitten im Code. Eine **Objektdatei** (`HUNK_UNIT`) wird in `dis`, `load_file` und im Monitor mit dem Hinweis „erst binden“ abgelehnt, statt still als Rohdaten gelesen zu werden.
+  Ein vlink-gebundenes Programm gleicher Quelle läuft im Emulator mit identischem Ergebnis (379 Befehle, gleiche Ausgabe und Bibliotheksaufrufe) und unterscheidet sich von unserer Hunk-Ausgabe nur im Füllwort hinter dem Code (`0000` bei uns, `NOP` bei vasm).
+- **OS-Emulation nach dem Abgleich mit dem NDK** (Auftrag an einen Agenten: alle 50 Funktionseinträge, Konstanten, Strukturen, Custom-/CIA-Adressen stimmen): `AllocMem`, `AllocVec` und `AvailMem` mit `MEMF_FAST`
+  liefern auf einer Maschine ohne Fast-RAM jetzt 0 (laut Autodoc schlägt der Aufruf dort fehl); `Remove` lässt `D0` unverändert (im Autodoc `void`); `libcalls` meldet je Funktion `min_version`
+  (33 = Kickstart 1.2; `AllocVec`/`FreeVec` sind V36, also **nicht** im Kickstart 1.2/1.3 eines Amiga 500), Monitor und Orchestrator-Bericht weisen darauf hin.
 - **`call` meldete `returned: true`, obwohl die Routine nie zurückgekehrt war:** Ein Sprung durch einen Zeiger, der noch 0 war (z. B. `JSR -48(A6)` mit `A6 = 0`), lief durch leeren Speicher und kam zufällig an der Rücksprungadresse `$FFFFF0` vorbei. Jetzt zählt nur der PC auf der Rücksprungadresse **mit** dem Stapelzeiger von vor dem Aufruf; sonst `returned:false` mit einem `note`.
   Gefunden beim ersten Durchspielen einer Routine des Beispiels in der Rolle des Modells.
 - Der Bericht von `run_routine` zählte den vom Aufrufer vorbereiteten Speicher als Änderung der Routine; gemessen wird jetzt ab dem Zustand nach der Vorbereitung.

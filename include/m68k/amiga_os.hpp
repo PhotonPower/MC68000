@@ -16,6 +16,7 @@ struct LibCall {
     int offset = 0;        ///< the negative vector offset from the library base (JSR -552(A6))
     std::string function;  ///< "OpenLibrary" if known, else ""
     bool emulated = false; ///< false: only logged; the call returned D0 = 0 and did nothing else
+    unsigned minVersion = 0; ///< first library version that has the function (33 = Kickstart 1.2, 36 = Kickstart 2.0); 0 = not in the tables
     Address caller = 0;    ///< return address of the call
     Long d0 = 0, d1 = 0, d2 = 0, d3 = 0, a0 = 0, a1 = 0;  ///< arguments (registers at the call)
     Long result = 0;       ///< D0 afterwards
@@ -75,6 +76,8 @@ public:
 
     /// Name of a well-known function ("" if not in the tables): exec.library -552 -> "OpenLibrary".
     [[nodiscard]] static std::string functionName(const std::string& library, int offset);
+    /// First library version that has the function (33 = Kickstart 1.2/1.3, 36 = Kickstart 2.0), 0 if it is not in the tables.
+    [[nodiscard]] static unsigned functionVersion(const std::string& library, int offset);
 
 private:
     static constexpr Address kStubBase = 0xF00000;

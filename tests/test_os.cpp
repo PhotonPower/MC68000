@@ -262,7 +262,7 @@ int main() {
             return static_cast<unsigned>(std::stoul(str(j, "hex"), nullptr, 16));
         };
         CHECK_EQ(regOf(r, "D1"), "0x" + be(static_cast<unsigned>(node(0))));    // RemHead
-        CHECK_EQ(regOf(r, "D2"), "0x" + be(static_cast<unsigned>(node(1))));    // Remove returns the node
+        CHECK_EQ(regOf(r, "D2"), "0x" + be(static_cast<unsigned>(node(0))));    // Remove is void in the autodocs: D0 stays as RemHead left it
         CHECK_EQ(regOf(r, "D3"), "0x" + be(static_cast<unsigned>(node(2))));    // FindName "two"
         CHECK_EQ(regOf(r, "D4"), std::string("0x00000000"));                    // "zero" is not in the list
         CHECK_EQ(regOf(r, "D5"), "0x" + be(static_cast<unsigned>(node(4))));    // RemTail
@@ -297,6 +297,44 @@ int main() {
         CHECK_EQ(std::stoul(regOf(r2, "D6"), nullptr, 16) - std::stoul(regOf(r2, "D7"), nullptr, 16), 1000UL);
         CHECK_EQ(std::stoul(regOf(r2, "D5"), nullptr, 16), std::stoul(regOf(r2, "D7"), nullptr, 16));    // one free block: the largest one is all of it
         CHECK_EQ(str(call(t, "{\"cmd\":\"read\",\"addr\":196608,\"len\":8}"), "hex"), std::string("0102030403040506"));   // 01..08, copy 6 bytes from +0 to +2: 01 02 01 02 03 04 05 06; then 3 bytes from +3 to +1: 01 02 03 04 03 04 05 06
+    }
+
+    // ---- MEMF_FAST on a machine without fast memory, minimum versions (checked against the NDK, exec autodoc / exec_lib.fd) -------------------------------------
+    {
+        const std::string prog =
+            "        ORG $20000\nstart:  MOVEA.L 4.W,A6\n"
+            "        MOVEQ #100,D0\n        MOVEQ #4,D1\n        JSR -198(A6)\n        MOVE.L D0,D2\n"                       // AllocMem(100, MEMF_FAST)            -> 0
+            "        MOVEQ #100,D0\n        MOVE.L #$10002,D1\n        JSR -198(A6)\n        MOVE.L D0,D3\n"               // AllocMem(100, CHIP|CLEAR)           -> a block
+            "        MOVEQ #100,D0\n        MOVEQ #4,D1\n        JSR -684(A6)\n        MOVE.L D0,D4\n"                       // AllocVec(100, MEMF_FAST)            -> 0
+            "        MOVEQ #100,D0\n        MOVEQ #1,D1\n        JSR -684(A6)\n        MOVE.L D0,D5\n"                       // AllocVec(100, MEMF_PUBLIC)          -> a block
+            "        MOVEQ #4,D1\n        JSR -216(A6)\n        MOVE.L D0,D6\n"                                                // AvailMem(MEMF_FAST)                 -> 0
+            "        MOVEQ #0,D1\n        JSR -216(A6)\n        MOVE.L D0,D7\n"                                                // AvailMem(any)                       -> free bytes
+            "        MOVEA.L D5,A1\n        JSR -690(A6)\n        RTS\n";                                                     // FreeVec
+        Session s;
+        call(s, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"os\":true}");
+        CHECK(ok(load(s, prog)));
+        const Json r = call(s, "{\"cmd\":\"run\"}");
+        CHECK_EQ(str(r, "stop"), std::string("exit"));
+        CHECK_EQ(regOf(r, "D2"), std::string("0x00000000"));
+        CHECK(regOf(r, "D3") != "0x00000000");
+        CHECK_EQ(regOf(r, "D4"), std::string("0x00000000"));
+        CHECK(regOf(r, "D5") != "0x00000000");
+        CHECK_EQ(regOf(r, "D6"), std::string("0x00000000"));
+        CHECK(regOf(r, "D7") != "0x00000000");
+        const std::vector<Json> calls = call(s, "{\"cmd\":\"libcalls\"}").find("calls")->items();
+        CHECK_EQ(str(calls[0], "note"), std::string("MEMF_FAST, but the machine has no fast memory"));
+        CHECK_EQ(calls[0].find("min_version")->asInt(), std::int64_t{33});            // AllocMem is in Kickstart 1.2
+        CHECK_EQ(str(calls[2], "function"), std::string("AllocVec"));
+        CHECK_EQ(calls[2].find("min_version")->asInt(), std::int64_t{36});            // AllocVec is not
+        CHECK_EQ(calls.back().find("min_version")->asInt(), std::int64_t{36});        // FreeVec
+        CHECK_EQ(str(calls.back(), "function"), std::string("FreeVec"));
+        // with fast memory in the machine the request succeeds (the heap is chip RAM in this emulation, see docs/amiga500.md)
+        Session t;
+        call(t, "{\"cmd\":\"machine\",\"type\":\"amiga500\",\"fast_kb\":512,\"os\":true}");
+        CHECK(ok(load(t, prog)));
+        const Json r2 = call(t, "{\"cmd\":\"run\"}");
+        CHECK(regOf(r2, "D2") != "0x00000000");
+        CHECK(regOf(r2, "D6") != "0x00000000");
     }
 
     // ---- state: checkpoints cover the OS, the stop is a protocol answer, the options ----------------------------------------------------

@@ -22,7 +22,6 @@ struct MonitorError : std::runtime_error {
 };
 
 constexpr Address kGenericStackTop = 0x80000;
-constexpr Address kDefaultHunkBase = 0x20000;
 constexpr std::size_t kMaxSpan = 0x100000;  // fill/compare/copy/search/save work on at most 1 MiB per command
 
 std::string lower(std::string s) {
@@ -478,7 +477,7 @@ std::string Monitor::Impl::run(const std::vector<std::string>& a) {
         std::string out;
         for (const LibCall& lc : m.os_->log()) {
             out += "  " + lc.library + " " + std::to_string(lc.offset) + (lc.function.empty() ? "" : " " + lc.function) +
-                   (lc.emulated ? "" : "  (NOT emulated: returned 0)") + "  D0=" + h8(lc.d0) + " D1=" + h8(lc.d1) + " A0=" + h8(lc.a0) +
+                   (lc.emulated ? "" : "  (NOT emulated: returned 0)") + (lc.minVersion >= 36 ? "  (V36+: not in Kickstart 1.x)" : "") + "  D0=" + h8(lc.d0) + " D1=" + h8(lc.d1) + " A0=" + h8(lc.a0) +
                    " A1=" + h8(lc.a1) + " -> D0=" + h8(lc.result) + (lc.note.empty() ? "" : "  [" + lc.note + "]") + "  called from " + h6(lc.caller) + "\n";
         }
         m.os_->clearLog();
@@ -833,6 +832,7 @@ std::string Monitor::Impl::cmdFiles(const std::string& cmd, const std::vector<st
                 m.nextDisassembly_ = img.entry.value_or(img.segments.empty() ? 0 : img.segments[0].address);
                 return "ok: " + std::to_string(total) + " bytes" + (img.entry ? ", PC=" + h6(*img.entry) : "") + "\n";
             }
+            if (looksLikeHunkObject(bytes)) throw MonitorError(kHunkObjectMessage);
             if (looksLikeHunkFile(bytes)) {
                 const Address base = a.size() > 2 ? address(a[2]) : kDefaultHunkBase;
                 const HunkImage img = loadHunkFile(bytes, base);
