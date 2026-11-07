@@ -1,7 +1,7 @@
 # Architektur
 
-> Die Struktur entspricht dem [Z80-Projekt](https://github.com/PhotonPower/Z80); Komponenten, die
-> noch nicht existieren, sind mit *(geplant)* markiert.
+> Die Struktur entspricht dem [Z80-Projekt](https://github.com/PhotonPower/Z80); alle hier genannten Komponenten sind umgesetzt.
+> Zu `session.hpp` gehören `src/session.cpp` (Maschine, Programm, Lauf), `src/session_analysis.cpp` (Analyse, Annotationen, Listing, Sprungtabellen, Datentypen) und `src/session_impl.hpp` (interne Hilfen).
 
 ## Überblick
 

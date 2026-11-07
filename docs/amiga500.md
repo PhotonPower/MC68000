@@ -1,9 +1,9 @@
 # Zielplattform: Commodore Amiga 500
 
-> **Geplant.** Entscheidung: Das Projekt zielt auf den **Amiga 500** mit MC68000 (nicht 68008/68010,
+> **Umgesetzt** (`m68k::Amiga500`, `m68k::AmigaOs`). Entscheidung: Das Projekt zielt auf den **Amiga 500** mit MC68000 (nicht 68008/68010,
 > nicht höhere Amiga-Modelle). Der Emulator-Kern bleibt maschinenunabhängig; alles Amiga-Spezifische
-> kommt als Plattformprofil und Gerätemodule dazu. Die Angaben sind Planungsgrundlage aus dem
-> Gedächtnis und vor der Umsetzung gegen das *Amiga Hardware Reference Manual* zu prüfen.
+> liegt als Plattformprofil (Speicherkarte, Schreibprotokoll der Custom-/CIA-Register) und als OS-Emulation darüber. Alle Adressen, Registernamen,
+> Funktionsnamen und Offsets stammen **aus dem Gedächtnis** und sind gegen das *Amiga Hardware Reference Manual* bzw. das NDK zu prüfen.
 
 ## Speicherlayout (Grundausstattung)
 

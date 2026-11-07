@@ -9,7 +9,7 @@ Der Orchestrator ist bisher nur gegen einen Mock getestet ([reverse-engineering.
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-ctest --test-dir build          # 27 Tests; dauert etwa 10 Sekunden
+ctest --test-dir build          # 28 Tests; dauert etwa 20 Sekunden
 ```
 
 Voraussetzungen: ein C++20-Compiler und CMake; für die Python-Teile Python ≥ 3.9 (nur Standardbibliothek). Der Orchestrator sucht `build/m68ktool` selbst, sonst `--m68ktool <Pfad>`.

@@ -6,6 +6,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
+Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte mit OS-Emulation,
+Reverse-Engineering-Werkzeuge und Orchestrator für ein lokales Modell. Der Orchestrator ist noch nicht mit einem echten Modell erprobt (siehe docs/roadmap.md).
+
 ### Hinzugefügt
 - **Erkennung von Einzelvariablen** in `data_regions`: ein Speicheroperand, den der Code immer mit derselben Größe `.W` oder `.L` anspricht, wird als Wort- bzw. Langwort-Variable vorgeschlagen; das Listing zeigt `DC.W`/`DC.L` statt einzelner Bytes.
   Kein Vorschlag bei Bytes, gemischten Größen, `LEA`/`PEA`, ungerader Adresse. Bekannte Grenze: ein direkter Zugriff in die Mitte einer Tabelle schneidet sie ab (siehe docs/reverse-engineering.md).

@@ -1,6 +1,6 @@
 # Dateiformate
 
-> **Geplant**, soweit nicht anders vermerkt.
+> Alle hier beschriebenen Formate sind umgesetzt: Kommentardatei, Raw-Binary, S-Records, Amiga-Hunk (Lesen und Schreiben), Snapshot-Datei, Projektdatei.
 
 ## Kommentardatei (Disassembler, `-c`)
 

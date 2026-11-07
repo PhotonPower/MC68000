@@ -75,8 +75,10 @@ kein Kommentar das Programm verändern kann (an 20 000 Zufallsprogrammen geteste
 
 ## Geplant
 
-- Erprobung des Orchestrators mit einem echten Modell und Feinschliff von Prompt und Parametern
-- weitere `exec`-/`dos`-Funktionen in der OS-Emulation
+- Erprobung des Orchestrators mit einem echten Modell und Feinschliff von Prompt und Parametern (vorbereitet: `--dry-run`, [Anleitung](docs/walkthrough.md))
+- weitere Datentypen in der Analyse (Strukturen, Bitplanes, Samples)
+- weitere `exec`-/`dos`-Funktionen in der OS-Emulation (Ports und Nachrichten, Dateien)
+- Vergleich mit Daten von echter Hardware (gestapelter PC und Statuswort bei Adressfehlern)
 
 ## Schnellstart
 
@@ -144,8 +146,8 @@ src/           Implementierung
 app/main.cpp   Kommandozeilenwerkzeug m68ktool
 agent/         Orchestrator für Ollama (Python, m68k_annotate.py)
 tests/         Unit-Tests (CTest)
-tools/         Entwicklerwerkzeuge (derzeit CI-Annotationen; später Kreuzprüfung)
-examples/      Beispielprogramm und Kommentardatei
+tools/         Entwicklerwerkzeuge: Kreuzprüfung gegen GNU binutils, Differenztests gegen Musashi, Formentabelle, CI-Annotationen
+examples/      Beispiele: kleines Programm mit Kommentardatei, Sektionsprogramm, Amiga-Beispiel, Monitor- und Agenten-Sitzung
 docs/          Dokumentation
 ```
 

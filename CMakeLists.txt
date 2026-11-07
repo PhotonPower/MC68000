@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(M68kTools
-        VERSION 0.1.0
+        VERSION 0.5.0
         DESCRIPTION "Motorola MC68000 assembler, disassembler, emulator and machine code monitor"
         LANGUAGES CXX)
 
