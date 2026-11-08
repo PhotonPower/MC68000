@@ -21,7 +21,7 @@ struct JumpTable {
     enum class Kind {
         Branch,    ///< `JMP/JSR d(PC,Dn)` into a row of BRA (or JMP abs) instructions: every entry is code
         Offset,    ///< `MOVE.W tab(PC,Dn),Dm ; JMP base(PC,Dm)`: words, target = base + signed word
-        Pointers   ///< a row of longword addresses of code
+        Pointers   ///< a row of longword addresses of code (followed when found behind `MOVEA.L tab(PC,Dn),An ; JMP (An)` or `LEA tab,Am ; MOVEA.L 0(Am,Dn),An ; JMP (An)`)
     };
     Kind kind = Kind::Branch;
     Address jump = 0;               ///< the JMP/JSR instruction (0 if the table was not found through one)
@@ -111,6 +111,8 @@ private:
     bool place(Address a, const Instruction& in);
     void note(Address from, const Instruction& in, std::vector<Address>* work);
     void detectJumpTable(Address a, const Instruction& in, std::vector<Address>& work);
+    void detectPointerJump(Address a, const Instruction& in, std::vector<Address>& work);
+    [[nodiscard]] bool looksLikeText(Address t) const;
     void scanPointerTables();
 
     const Memory& mem_;

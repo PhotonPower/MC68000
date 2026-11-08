@@ -109,7 +109,7 @@ Gesamtzähler seit dem letzten `reset`.
 | `ann_routine` | `addr`, `name?`, `summary?`, `inputs?`, `outputs?`, `clobbers?`, `confidence?` (`high`, `medium`, `low`) | Routine dokumentieren |
 | `ann_variable` | `name`, `addr`, `size?` (1), `comment?` | Variable/Tabelle benennen |
 | `ann_data` | `addr`, `length`, `kind?` (`bytes`, `words`, `longs`, `text`, `pointers`), `name?`, `comment?` | Bereich als Daten kennzeichnen; abgelehnt, wenn er analysierten Code enthält oder einen anderen Datenbereich überlappt |
-| `ann_comment` | `addr`, `text`, `block?` | Kommentar zu einem Befehl (oder `block:true`: Block über der Zeile); Adressen **mitten in einem Befehl** werden mit Erklärung abgelehnt |
+| `ann_comment` | `addr`, `text`, `block?` | Kommentar zu einem Befehl oder einer Datenzeile (oder `block:true`: Block über der Zeile); an einer Adresse mitten in einer Datenzeile beginnt das Listing dort eine neue Zeile; Adressen **mitten in einem Befehl** werden mit Erklärung abgelehnt |
 | `ann_constant` | `addr`, `remove?` | markiert den Befehl an der Adresse als einen, dessen Immediate eine **Zahl** ist, keine Adresse: das Listing erfindet dann kein Label für den Wert und schreibt kein `[#imm = …]` (Adressen **mitten in einem Befehl** und außerhalb des Codes werden abgelehnt); `remove:true` nimmt die Markierung zurück |
 | `ann_remove` | `addr` | Namen, Dokumentation, Variable, Datenbereich, Kommentare und die Konstantenmarkierung an der Adresse entfernen |
 | `ann_title` | `title` | Titel im Listing |

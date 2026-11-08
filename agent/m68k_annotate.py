@@ -211,8 +211,8 @@ TOOLS = [
     _fn("mark_data", "Declare a range as data (not code) and how to display it. For kind text the length may be left out: the string ends with its NUL.",
         {"addr": ADDR, "length": {"type": "integer", "description": "bytes; optional for kind text"}, "kind": {"type": "string", "enum": ["bytes", "words", "longs", "text", "pointers"]},
          "name": {"type": "string"}, "comment": {"type": "string"}}, ["addr", "kind"]),
-    _fn("add_comment", "Comment for one line of code (appears behind the instruction), or a block comment above it. Use the exact address "
-                       "from the right-hand comment of the listing line; an address inside an instruction is refused.",
+    _fn("add_comment", "Comment for one line of code or data (appears behind the instruction or DC line), or a block comment above it. Use the exact "
+                       "address from the right-hand comment of the listing line; an address inside an instruction is refused, one inside a data line starts a new line there.",
         {"addr": ADDR, "text": {"type": "string"}, "block": {"type": "boolean"}}, ["addr", "text"]),
     _fn("mark_constant", "Mark the instruction at an address as one whose immediate operand is a plain NUMBER, not an address (a size, count, offset, packed pair such as $00050006): the listing then neither invents a label for the value nor notes it as [#imm = ...]. Use the address of the instruction itself; remove=true takes the mark back.",
         {"addr": ADDR, "remove": {"type": "boolean"}}, ["addr"]),

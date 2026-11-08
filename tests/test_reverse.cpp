@@ -452,6 +452,46 @@ int main() {
         CHECK_EQ(a2.expressionFor(0x2003).value(), std::string("big+3"));
     }
     {
+        // comments on data: ann_comment accepts any address, so a comment at a data address must appear in the listing,
+        // and a comment or block comment in the middle of a data line must start a new line there (it used to be dropped)
+        Memory mem;
+        const std::vector<Byte> bytes = {0x4E, 0x75,                                       // $1000 RTS
+                                         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,             // $1002 bytes (annotated)
+                                         0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,    // $100E words (annotated)
+                                         'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 0,         // $1016 text (annotated)
+                                         0,                                                 // $101F padding
+                                         0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8};   // $1020 plain bytes (not annotated)
+        mem.load(0x1000, bytes);
+        const Address end = 0x1000 + static_cast<Address>(bytes.size());
+        Analysis an(mem, 0x1000, end);
+        an.addEntry(0x1000);
+        an.analyzeFlow();
+        Annotations ann;
+        DataRegion r;
+        r.address = 0x1002; r.length = 12; r.kind = DataKind::Bytes; r.name = "tab";
+        CHECK(!ann.setData(r).has_value());
+        r.address = 0x100E; r.length = 8; r.kind = DataKind::Words; r.name = "wtab";
+        CHECK(!ann.setData(r).has_value());
+        r.address = 0x1016; r.length = 9; r.kind = DataKind::Text; r.name = "msg";
+        CHECK(!ann.setData(r).has_value());
+        ann.setComment(0x1002, "first entry");        // start of a region
+        ann.setComment(0x1005, "fourth entry");       // middle of a DC.B line
+        ann.setBlockComment(0x100A, "second half");   // block comment in the middle of the region
+        ann.setComment(0x1012, "third word");         // middle of a DC.W line
+        ann.setComment(0x101A, "from E on");          // middle of a string
+        ann.setComment(0x1023, "plain byte");         // bytes nobody annotated
+        ListingOptions lo;
+        lo.from = 0x1000;
+        lo.to = end;
+        const ListingResult res = renderListing(mem, an, ann, lo);
+        CHECK(res.verified);
+        CHECK(has(res.text, "tab:\n        DC.B     $01,$02,$03                  ; first entry\n"));
+        CHECK(has(res.text, "\n        DC.B     $04,$05,$06,$07,$08          ; fourth entry\n; second half\n        DC.B     $09,$0A,$0B,$0C\n"));
+        CHECK(has(res.text, "\n        DC.W     $9ABC,$DEF0                  ; third word\n"));
+        CHECK(has(res.text, "\n        DC.B     \"ABCD\"\n        DC.B     \"EFGH\",0                     ; from E on\n"));
+        CHECK(has(res.text, "\n        DC.B     $F4,$F5,$F6,$F7,$F8          ; plain byte\n"));
+    }
+    {
         // random programs and random annotations: the listing must always be verified
         std::mt19937 rng(777);
         const Word common[] = {0x4E75, 0x4E71, 0x6000, 0x6100, 0x6700, 0x6600, 0x4EB9, 0x4EF9, 0x41FA, 0x4879, 0x33FC, 0x51C8,

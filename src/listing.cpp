@@ -128,14 +128,22 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
         return pad(line, 44) + "  ; " + oneLine(comment);
     };
     // jump tables found by the analysis: offset tables are shown as words with their targets, branch tables get a comment
-    std::map<Address, const JumpTable*> offsetTables, branchTables;
+    std::map<Address, const JumpTable*> offsetTables, branchTables, pointerTables;
     for (const JumpTable& jt : analysis.jumpTables()) {
         if (!jt.followed) continue;
         if (jt.kind == JumpTable::Kind::Offset) offsetTables[jt.table] = &jt;
         else if (jt.kind == JumpTable::Kind::Branch) branchTables[jt.table] = &jt;
+        else if (jt.kind == JumpTable::Kind::Pointers && jt.jump != 0) pointerTables[jt.table] = &jt;   // found behind JMP (An)
     }
+    // A data line also ends where a comment or block comment is attached: ann_comment accepts any address, and a comment
+    // can only be written behind the line that starts at its address.
+    auto breaksLine = [&](Address b) { return names.count(b) || ann.commentAt(b) || ann.blockCommentAt(b); };
     auto isBoundary = [&](Address b) {
-        return b >= to || names.count(b) || analysis.at(b) || ann.dataAt(b) || ann.variableAt(b) || offsetTables.count(b);
+        return b >= to || breaksLine(b) || analysis.at(b) || ann.dataAt(b) || ann.variableAt(b) || offsetTables.count(b) || pointerTables.count(b);
+    };
+    auto userComment = [&](Address b) -> std::string {
+        const std::string* c = ann.commentAt(b);
+        return c ? *c : std::string();
     };
 
     auto dcBytes = [&](Address a, std::size_t n) {
@@ -241,15 +249,16 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             if (const VariableDoc* v = ann.variableAt(a); v && !v->comment.empty() && v->comment != r->comment) emitComment(v->comment);
             Address p = a;
             while (p < end) {
+                const Address lineStart = p;
                 switch (r->kind) {
                     case DataKind::Bytes: {
                         std::size_t n = std::min<std::size_t>(8, end - p);
                         for (std::size_t i = 1; i < n; ++i)
-                            if (names.count(p + static_cast<Address>(i))) {
+                            if (breaksLine(p + static_cast<Address>(i))) {
                                 n = i;
                                 break;
                             }
-                        body << dcBytes(p, n) << "\n";
+                        body << withComment(dcBytes(p, n), userComment(lineStart)) << "\n";
                         p += static_cast<Address>(n);
                         break;
                     }
@@ -271,21 +280,21 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                             items += text;
                             p += unit;
                             ++count;
-                            // a label in the middle of the table ends the line
-                            if (p < end && names.count(p)) break;
+                            // a label or a comment in the middle of the table ends the line
+                            if (p < end && breaksLine(p)) break;
                         }
                         if (count == 0) {  // a trailing odd byte
-                            body << dcBytes(p, end - p) << "\n";
+                            body << withComment(dcBytes(p, end - p), userComment(lineStart)) << "\n";
                             p = end;
                         } else {
-                            body << (unit == 2 ? "        DC.W     " : "        DC.L     ") << items << "\n";
+                            body << withComment((unit == 2 ? "        DC.W     " : "        DC.L     ") + items, userComment(lineStart)) << "\n";
                         }
                         break;
                     }
                     case DataKind::Text: {
                         Address next = p;
-                        std::string line = textStatement(p, end, [&](Address x) { return names.count(x) != 0; }, next);
-                        if (next < end && view.read8(next) == 0 && (next & 1U) != 0 && !names.count(next) && view.read8(next - 1) == 0) {
+                        std::string line = withComment(textStatement(p, end, [&](Address x) { return breaksLine(x); }, next), userComment(lineStart));
+                        if (next < end && view.read8(next) == 0 && (next & 1U) != 0 && !breaksLine(next) && view.read8(next - 1) == 0) {
                             line += "\n        EVEN";   // a padding byte behind the terminator at an odd address: EVEN writes it
                             ++next;
                         }
@@ -294,7 +303,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                         break;
                     }
                 }
-                if (p < end && names.count(p)) emitHeader(p);
+                if (p < end && breaksLine(p)) emitHeader(p);
             }
             a = end;
             continue;
@@ -302,6 +311,8 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
 
         if (const VariableDoc* v = ann.variableAt(a)) {
             const Address end = std::min<Address>(a + v->size, to);
+            std::string vcomment = v->comment;
+            if (const std::string c = userComment(a); !c.empty() && c != vcomment) vcomment += (vcomment.empty() ? "" : "; ") + c;
             const unsigned size = end - a;
             std::string line;
             if (size == 2 && !(a & 1U)) line = "        DC.W     " + hexv(view.read16(a), 4);
@@ -311,11 +322,11 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             bool allZero = size >= 8;
             for (Address p = a; allZero && p < end; ++p) allZero = view.read8(p) == 0;
             if (!line.empty()) {
-                body << withComment(line, v->comment) << "\n";
+                body << withComment(line, vcomment) << "\n";
             } else if (allZero) {   // a buffer of zeros (a BSS variable)
-                body << withComment("        DS.B     " + std::to_string(size), v->comment) << "\n";
+                body << withComment("        DS.B     " + std::to_string(size), vcomment) << "\n";
             } else {
-                if (!v->comment.empty()) emitComment(v->comment);
+                if (!vcomment.empty()) emitComment(vcomment);
                 for (Address p = a; p < end; p += 8) body << dcBytes(p, std::min<std::size_t>(8, end - p)) << "\n";
             }
             a = end;
@@ -330,7 +341,34 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             for (std::size_t i = 0; i < t.slots.size(); ++i) {
                 if (i > 0 && names.count(t.slots[i])) emitHeader(t.slots[i]);
                 const std::string name = symbolize(t.targets[i]);
-                body << withComment("        DC.W     " + hexv(view.read16(t.slots[i]), 4), "-> " + (name.empty() ? hexv(t.targets[i], 6) : name)) << "\n";
+                const std::string extra = userComment(t.slots[i]);
+                body << withComment("        DC.W     " + hexv(view.read16(t.slots[i]), 4), "-> " + (name.empty() ? hexv(t.targets[i], 6) : name) + (extra.empty() ? "" : "  " + extra))
+                     << "\n";
+            }
+            a += t.bytes;
+            continue;
+        }
+
+        if (const auto pt = pointerTables.find(a); pt != pointerTables.end() && !ann.dataCovering(a) && a + pt->second->bytes <= to) {
+            const JumpTable& t = *pt->second;
+            emitComment("jump table of the jump at " + hexv(t.jump, 6) + ": " + std::to_string(t.slots.size()) + " pointers");
+            std::size_t i = 0;
+            while (i < t.slots.size()) {
+                const Address lineStart = t.slots[i];
+                if (i > 0 && breaksLine(lineStart)) emitHeader(lineStart);
+                std::string items;
+                std::size_t n = 0;
+                while (i < t.slots.size() && n < 4) {
+                    if (n > 0 && breaksLine(t.slots[i])) break;   // a label or a comment inside the table starts a new line
+                    const Long v = view.read32(t.slots[i]);
+                    std::string item = hexv(v, 8);
+                    if (v != 0 && v == (v & kAddressMask))
+                        if (const std::string sym = symbolize(v); !sym.empty()) item = sym;
+                    items += (n ? "," : "") + item;
+                    ++i;
+                    ++n;
+                }
+                body << withComment("        DC.L     " + items, userComment(lineStart)) << "\n";
             }
             a += t.bytes;
             continue;
@@ -389,7 +427,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             if (n >= 4) {
                 Address next = a;
                 const std::string line = textStatement(a, to, [&](Address x) { return isBoundary(x); }, next);
-                body << line << "\n";
+                body << withComment(line, userComment(a)) << "\n";
                 a = next;
                 continue;
             }
@@ -399,11 +437,11 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
                !analysis.at(a + static_cast<Address>(zeros)))
             ++zeros;
         if (zeros >= zeroMinimum(a)) {
-            body << "        DS.B     " << zeros << "\n";
+            body << withComment("        DS.B     " + std::to_string(zeros), userComment(a)) << "\n";
             a += static_cast<Address>(zeros);
             continue;
         }
-        body << dcBytes(a, end - a) << "\n";
+        body << withComment(dcBytes(a, end - a), userComment(a)) << "\n";
         a = end;
     }
 

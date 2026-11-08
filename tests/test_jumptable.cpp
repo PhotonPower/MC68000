@@ -94,9 +94,9 @@ const char* kProgram =
     "        RTS\n"
     "o3:     MOVEQ   #13,D3\n"
     "        RTS\n"
-    "callit: LEA     ptab(PC),A0\n"
+    "callit: LEA     ptab(PC),A0\n"      // loads an entry but does not jump through it: the table is only a suggestion
     "        MOVEA.L (A0,D0.W),A1\n"
-    "        JSR     (A1)\n"
+    "        NOP\n"
     "        RTS\n"
     "ptab:   DC.L    p0,p1,p2\n"
     "p0:     MOVEQ   #20,D4\n"
@@ -105,6 +105,49 @@ const char* kProgram =
     "        RTS\n"
     "p2:     MOVEQ   #22,D4\n"
     "        RTS\n";
+
+
+// Pointer tables behind JMP (An) / JSR (An): the address is loaded from the table first, PC-relative (MOVEA.L tab(PC,Dn),An) or through a
+// base register (LEA tab,Am ; MOVEA.L 0(Am,Dn),An). The second table is addressed 4 bytes early because its index starts at 1, so its
+// first slot would overlap the dispatching instructions; a zero entry in the middle is an unused slot.
+const char* kPointerJumps =
+    "        ORG $1000\n"
+    "first:  MOVEQ   #0,D0\n"
+    "        MOVE.B  D1,D0\n"
+    "        ASL.W   #2,D0\n"
+    "        MOVEA.L ptab(PC,D0.W),A0\n"
+    "        JMP     (A0)\n"
+    "ptab:   DC.L    c0,c1,0,c2\n"
+    "c0:     MOVEQ   #0,D2\n"
+    "        RTS\n"
+    "c1:     MOVEQ   #1,D2\n"
+    "        RTS\n"
+    "c2:     MOVEQ   #2,D2\n"
+    "        RTS\n"
+    "second: MOVE.W  D1,D0\n"
+    "        ASL.W   #2,D0\n"
+    "        LEA     ltab-4,A1\n"
+    "        MOVEA.L 0(A1,D0.W),A1\n"
+    "        JSR     (A1)\n"
+    "        RTS\n"
+    "ltab:   DC.L    d1,d2,d3\n"
+    "d1:     MOVEQ   #11,D3\n"
+    "        RTS\n"
+    "d2:     MOVEQ   #12,D3\n"
+    "        RTS\n"
+    "d3:     MOVEQ   #13,D3\n"
+    "        RTS\n"
+    "e1:     MOVEQ   #21,D3\n"
+    "        RTS\n"
+    "e2:     MOVEQ   #22,D3\n"
+    "        RTS\n"
+    "third:  ADD.W   D0,D0\n"
+    "        ADD.W   D0,D0\n"
+    "        MOVEA.L etab(PC,D0.W),A0\n"
+    "        JSR     (A0)\n"
+    "        RTS\n"
+    "etab:   DC.L    e1,e2\n"
+    "data:   DC.B    'not code at all',0\n";
 
 }  // namespace
 
@@ -152,6 +195,53 @@ int main() {
             CHECK_EQ(ptr->slots.size(), std::size_t{3});
         }
         CHECK(an.at(b.sym("p0")) == nullptr);            // not followed: the handlers are not code (yet)
+    }
+
+    // ---- pointer tables behind JMP (An) / JSR (An) are followed -------------------------------------------------------------------------------
+    {
+        const Built b(kPointerJumps);
+        const Analysis an = analyse(b, {"first", "second", "third"});
+        std::vector<const JumpTable*> ptrs;
+        for (const JumpTable& t : an.jumpTables())
+            if (t.kind == JumpTable::Kind::Pointers) ptrs.push_back(&t);
+        CHECK_EQ(ptrs.size(), std::size_t{3});
+        for (const JumpTable* t : ptrs) CHECK(t->followed);   // the jump instruction is the evidence
+        if (ptrs.size() == 3) {
+            auto at = [&](const char* n) {
+                for (const JumpTable* t : ptrs)
+                    if (t->table == b.sym(n)) return t;
+                return ptrs[0];
+            };
+            const JumpTable* p = at("ptab");
+            const JumpTable* l = at("ltab");
+            const JumpTable* e = at("etab");
+            CHECK_EQ(e->table, b.sym("etab"));            // handlers in front of the table do not end it
+            CHECK_EQ(e->targets.size(), std::size_t{2});
+            CHECK_EQ(p->table, b.sym("ptab"));
+            CHECK_EQ(p->jump, b.sym("first") + 10);
+            CHECK_EQ(p->bytes, 16U);                      // four slots, the zero one included
+            CHECK_EQ(p->targets.size(), std::size_t{3});  // but only three targets
+            CHECK_EQ(l->table, b.sym("ltab"));            // the slot that overlaps the code is skipped
+            CHECK_EQ(l->bytes, 12U);
+            CHECK_EQ(l->targets.size(), std::size_t{3});
+        }
+        for (const char* c : {"c0", "c1", "c2", "d1", "d2", "d3", "e1", "e2"}) CHECK(an.at(b.sym(c)) != nullptr);
+        CHECK(an.isTableData(b.sym("ptab")));
+        CHECK(an.isTableData(b.sym("ltab") + 8));
+        CHECK(an.at(b.sym("data")) == nullptr);           // the table ends in front of the first handler, the string stays data
+
+        // the listing shows the tables with the names of their targets
+        ListingOptions lo;
+        lo.from = b.from;
+        lo.to = b.to;
+        const ListingResult r = renderListing(b.mem, an, Annotations{}, lo);
+        CHECK(r.verified);
+        CHECK(has(r.text, "DC.L     sub_00101C,sub_001020,$00000000,sub_001024"));
+        CHECK(has(r.text, "jump table of the jump at $00100A: 4 pointers"));
+        CHECK(has(r.text, "sub_001044:\n        MOVEQ    #$0B,D3"));
+        // without the dispatching routine there is no evidence: nothing is followed
+        const Analysis lonely = analyse(b, {"c0"});
+        CHECK(lonely.at(b.sym("d1")) == nullptr);
     }
 
     // ---- m68ktool dis (the Disassembler class) follows the tables as well: their cases are code, not DC.B ----------------------------------------------------

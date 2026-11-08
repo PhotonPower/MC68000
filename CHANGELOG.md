@@ -9,6 +9,11 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 ### Hinzugefügt
 - **Konstanten in den Annotationen:** `ann_constant` (Agentenwerkzeug `mark_constant`, JSON-Schlüssel `constants`) markiert einen Befehl, dessen Immediate eine Zahl und keine Adresse ist. Das Listing erfand bisher für jeden langen Immediate, der auf eine Adresse im Programm fällt, ein Platzhalterlabel und schrieb `[#imm = …]` dazu; bei Größen, Anzahlen, Offsets und Wortpaaren (`#$00050006`) war das falsch und zerteilte Code oder Daten. Gefunden bei der Durchsicht des Listings eines 364-KB-Spiels (42 Stellen).
 
+- **Zeigertabellen hinter `JMP (An)` / `JSR (An)` werden verfolgt:** `MOVEA.L tab(PC,Dn),An ; JMP (An)` und `LEA tab,Am ; MOVEA.L d8(Am,Dn),An ; JMP (An)` (LEA abs.L, abs.W oder `d16(PC)`). Bisher waren solche Tabellen höchstens ein Vorschlag, und ihre Fälle blieben im Listing `DC.B`. Nulleinträge (unbenutzte Fälle) und Tabellen, die über `tab-4` adressiert werden (Index ab 1), sind erlaubt; Fälle **vor** der Tabelle beenden sie nicht. Im Listing erscheinen sie als `DC.L` mit den Namen der Ziele. Gefunden beim Kommentieren des 364-KB-Spiels: vier solche Tabellen mit 22 Fällen standen als Daten im Listing; mit der Erkennung findet die Analyse sie ohne zusätzliche Einsprünge (keine Fehltreffer gegenüber dem von Hand geprüften Listing).
+
+### Behoben
+- **Kommentare an Datenadressen gingen verloren:** `ann_comment` nimmt jede Adresse an, das Listing schrieb Kommentare aber nur hinter Befehle. Jetzt stehen sie auch hinter `DC`-/`DS`-Zeilen (annotierte Datenbereiche, Variablen, Zeigertabellen, unbekannte Bytes), und an einem Kommentar oder Blockkommentar **mitten in einer Datenzeile** beginnt eine neue Zeile (vorher fehlten beide). Gefunden beim Neuerzeugen des Listings aus der Projektdatei (rund 200 Tabellenkommentare).
+
 ### Geändert
 - **Adressen in annotierten Variablen und Datenbereichen** bekommen im Listing keinen Platzhalter mehr, sondern erscheinen als `name+offset` (die EQU-Zeilen `data_00EF3A` entfallen).
 - **Offsets in `name+offset`** werden ab 10 hexadezimal geschrieben (`player1_state+$26`), kleinere bleiben unverändert.

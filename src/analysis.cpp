@@ -116,6 +116,10 @@ void Analysis::addPointerTable(Address table, std::size_t bytes) {
 // Jump tables behind JMP/JSR (d8,PC,Xn). Both patterns are tied to the jump instruction itself, so false positives need a very specific
 // byte pattern; a table needs at least two entries.
 void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Address>& work) {
+    if (in.bytes.size() == 2) {
+        detectPointerJump(a, in, work);
+        return;
+    }
     if (in.bytes.size() != 4) return;
     const unsigned op = (static_cast<unsigned>(in.bytes[0]) << 8) | in.bytes[1];
     if (op != 0x4EFB && op != 0x4EBB) return;  // JMP / JSR (d8,PC,Xn)
@@ -200,21 +204,115 @@ void Analysis::detectJumpTable(Address a, const Instruction& in, std::vector<Add
     }
 }
 
+// A string decodes as instructions as well ("3 4 + 5 *" is a run of valid opcodes): a target that starts with four printable characters, at least
+// three of them letters, digits or blanks, is text.
+bool Analysis::looksLikeText(Address t) const {
+    if (t + 4 > to_) return false;
+    unsigned alnum = 0;
+    for (Address i = 0; i < 4; ++i) {
+        const Byte b = mem_.read8(t + i);
+        if (b < 0x20 || b >= 0x7F) return false;
+        if ((b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == ' ') ++alnum;
+    }
+    return alnum >= 3;
+}
+
+// A table of code addresses behind JMP (An) / JSR (An): the address is loaded from the table just before the jump, either PC-relative
+//     MOVEA.L tab(PC,Dn),An ; JMP (An)
+// or through a base register that the instruction before sets
+//     LEA tab,Am ; MOVEA.L d8(Am,Dn),An ; JMP (An)        (LEA abs.L, abs.W or d16(PC))
+// The three instructions must follow each other directly; the jump is the evidence, so the targets are followed. A table may be addressed a few
+// bytes early when its index starts at 1 (tab-4): slots that overlap the dispatching instructions are skipped. A zero slot in the middle is an
+// unused case; the table ends at the first longword that is neither zero nor the address of an instruction, where another table or a target
+// behind it begins, or after 256 slots.
+void Analysis::detectPointerJump(Address a, const Instruction& in, std::vector<Address>& work) {
+    const unsigned op = (static_cast<unsigned>(in.bytes[0]) << 8) | in.bytes[1];
+    if ((op & 0xFFF8) != 0x4ED0 && (op & 0xFFF8) != 0x4E90) return;   // JMP (An) / JSR (An)
+    const unsigned an = op & 7U;
+    auto it = code_.find(a);
+    if (it == code_.end() || it == code_.begin()) return;
+    --it;
+    const Address movAddr = it->first;
+    const Instruction& mov = it->second;
+    if (movAddr + mov.length() != a || mov.bytes.size() != 4) return;
+    const unsigned mop = (static_cast<unsigned>(mov.bytes[0]) << 8) | mov.bytes[1];
+    const unsigned mext = (static_cast<unsigned>(mov.bytes[2]) << 8) | mov.bytes[3];
+    if (mext & 0x0700U) return;   // not the brief extension word of the 68000
+    Address table = 0;
+    if (mop == (0x207BU | (an << 9))) {   // MOVEA.L (d8,PC,Xn),An
+        table = static_cast<Address>(movAddr + 2 + sext8(mext)) & kAddressMask;
+    } else if ((mop & 0xFFF8U) == (0x2070U | (an << 9))) {   // MOVEA.L (d8,Am,Xn),An
+        const unsigned am = mop & 7U;
+        if (((mext >> 12) & 0xFU) == (am | 8U)) return;   // indexed by its own base register: not a table walk
+        if (it == code_.begin()) return;
+        --it;
+        const Instruction& lea = it->second;
+        if (it->first + lea.length() != movAddr) return;
+        const unsigned lop = (static_cast<unsigned>(lea.bytes[0]) << 8) | lea.bytes[1];
+        Address base = 0;
+        if (lop == (0x41F9U | (am << 9)) && lea.bytes.size() == 6) {
+            const Long v = (static_cast<Long>(lea.bytes[2]) << 24) | (static_cast<Long>(lea.bytes[3]) << 16) | (static_cast<Long>(lea.bytes[4]) << 8) | lea.bytes[5];
+            base = v & kAddressMask;
+        } else if (lop == (0x41F8U | (am << 9)) && lea.bytes.size() == 4) {   // LEA abs.W
+            base = static_cast<Address>(sext16((static_cast<unsigned>(lea.bytes[2]) << 8) | lea.bytes[3])) & kAddressMask;
+        } else if (lop == (0x41FAU | (am << 9)) && lea.bytes.size() == 4) {
+            base = static_cast<Address>(it->first + 2 + sext16((static_cast<unsigned>(lea.bytes[2]) << 8) | lea.bytes[3])) & kAddressMask;
+        } else {
+            return;
+        }
+        table = static_cast<Address>(base + sext8(mext)) & kAddressMask;
+    } else {
+        return;
+    }
+    if (table & 1U) return;
+    // slots that overlap the dispatching instructions (an index that starts at 1)
+    Address slot = table;
+    for (int skip = 0; skip < 2 && inRange(slot) && slot < a + in.length() && slot + 4 > movAddr - 6; ++skip) slot += 4;
+    if (slot < a + in.length() && slot + 4 > movAddr - 6) return;
+
+    JumpTable jt;
+    jt.kind = JumpTable::Kind::Pointers;
+    jt.jump = a;
+    jt.table = slot;
+    Address minTarget = 0xFFFFFFFF;
+    std::size_t lastReal = 0;
+    for (; jt.slots.size() < 256; slot += 4) {
+        if (!inRange(slot) || !inRange(slot + 3) || slot >= minTarget) break;
+        bool free = true;
+        for (Address k = 0; k < 4; ++k) free = free && state_[slot + k - from_] == 0;
+        if (!free) break;
+        if (slot != jt.table && refs_.count(slot)) break;   // another table or a referenced item starts here
+        const Long v = mem_.read32(slot);
+        if (v == 0) {   // an unused slot
+            jt.slots.push_back(slot);
+            continue;
+        }
+        const Address t = v & kAddressMask;
+        if (v != t || !inRange(t) || (t & 1U) || (isData_ && isData_(t)) || looksLikeText(t)) break;
+        const Instruction first = decode(mem_, t);
+        if (!first.valid || (first.mnemonic == "ORI.B" && first.operands == "#$00,D0")) break;
+        jt.slots.push_back(slot);
+        jt.targets.push_back(t);
+        lastReal = jt.slots.size();
+        if (t > jt.table) minTarget = std::min(minTarget, t);   // only a target behind the table can end it (handlers may also lie in front of it)
+    }
+    jt.slots.resize(lastReal);   // trailing zero slots are not part of the table
+    if (jt.targets.size() < 2) return;
+    jt.bytes = static_cast<unsigned>(jt.slots.size() * 4);
+    for (unsigned i = 0; i < jt.bytes; ++i) state_[jt.table - from_ + i] = 3;
+    for (const Address t : jt.targets) {
+        work.push_back(t);
+        jumpTargets_.insert(t);
+        entries_.insert(t);   // a case of the table is code that nobody calls directly: it is its own routine
+    }
+    refs_.insert(jt.table);
+    tables_.push_back(std::move(jt));
+}
+
 // Rows of longword addresses of code that data references point at (LEA tab(PC),A0 ...): reported as suggestions, not followed,
 // because a row of numbers that look like addresses can also be plain data.
 void Analysis::scanPointerTables() {
-    // A string decodes as instructions as well ("3 4 + 5 *" is a run of valid opcodes): a target that starts with four printable characters, at least
-    // three of them letters, digits or blanks, is text. Rows of such pointers are tables of strings (data_regions finds those), not of routines.
-    auto looksLikeText = [&](Address t) {
-        if (t + 4 > to_) return false;
-        unsigned alnum = 0;
-        for (Address i = 0; i < 4; ++i) {
-            const Byte b = mem_.read8(t + i);
-            if (b < 0x20 || b >= 0x7F) return false;
-            if ((b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == ' ') ++alnum;
-        }
-        return alnum >= 3;
-    };
+    // Rows of pointers to text are tables of strings (data_regions finds those), not of routines (see looksLikeText).
     std::set<Address> covered;
     for (const JumpTable& t : tables_)
         for (Address b = t.table; b < t.table + t.bytes; ++b) covered.insert(b);

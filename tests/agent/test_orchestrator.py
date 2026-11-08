@@ -376,12 +376,14 @@ class LibraryCallReportTest(unittest.TestCase):
             self.assertIn("NOT emulated", "\n".join(mock.system_prompts))
 
 
+# The jump does not follow the load directly (EXG in between), so the analysis only suggests the table and the orchestrator marks it.
+# (MOVEA.L ... ; JMP (An) back to back is followed by the analysis itself.)
 TABLEDEMO = """\
         ORG $1000
 callit: LEA     ptab(PC),A0
         MOVEA.L (A0,D0.W),A1
-        JSR     (A1)
-        RTS
+        EXG     A1,A2
+        JMP     (A2)
 ptab:   DC.L    p0,p1,p2
 p0:     MOVEQ   #20,D4
         RTS
