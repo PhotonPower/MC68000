@@ -227,6 +227,18 @@ class ExampleProgramTest(unittest.TestCase):
         self.assertEqual(tools.write_notes([]), [])
         self.assertEqual(tools.write_notes([{"addr": "0x020090", "len": 2}]), [])  # data between the routines is fine
 
+    def test_mark_constant_marks_an_instruction_and_refuses_the_middle_of_one(self):
+        s, tools = self._server_with_example()
+        try:
+            self.assertEqual(tools.dispatch("mark_constant", {"addr": "0x020000"}), "ok: constant marked")
+            marked = s.ok(cmd="ann_list")["annotations"]["constants"]
+            self.assertEqual([c["addr"] for c in marked], ["0x020000"])
+            self.assertIn("first byte", tools.dispatch("mark_constant", {"addr": "0x020002"}))   # inside the first instruction
+            self.assertEqual(tools.dispatch("mark_constant", {"addr": "0x020000", "remove": True}), "ok: constant mark removed")
+            self.assertEqual(s.ok(cmd="ann_list")["annotations"]["constants"], [])
+        finally:
+            s.close()
+
     def test_mark_data_text_needs_no_length_and_the_checks_look_at_pc_relative_operands(self):
         s, tools = self._server_with_example()
         try:

@@ -26,7 +26,7 @@ std::string hexAddrS(Address a) {
 
 bool Session::Impl::isAnalysisCommand(const std::string& cmd) const {
     static const char* names[] = {"analyze", "jump_tables", "data_regions", "references", "routines", "listing", "ann_label", "ann_routine", "ann_variable", "ann_data",
-                                  "ann_comment", "ann_remove", "ann_title", "ann_list", "ann_save", "ann_load"};
+                                  "ann_comment", "ann_constant", "ann_remove", "ann_title", "ann_list", "ann_save", "ann_load"};
     for (const char* n : names)
         if (cmd == n) return true;
     return false;
@@ -362,6 +362,13 @@ Json Session::Impl::cmdAnalysis(const std::string& cmd) {
         }
         if (flag("block")) ann.setBlockComment(a, str("text"));
         else ann.setComment(a, str("text"));
+        return Json::object();
+    }
+    if (cmd == "ann_constant") {
+        const Address a = address("addr");
+        if (s.analysis_ && !(s.analysis_->isCode(a) && s.analysis_->at(a)))
+            throw SessionError("address " + hexAddrS(a) + " is not the first byte of an analysed instruction; a constant is marked on the instruction that holds the immediate");
+        ann.setConstant(a, !flag("remove"));
         return Json::object();
     }
     if (cmd == "ann_remove") {

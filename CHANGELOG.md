@@ -6,6 +6,13 @@ die Versionierung an [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Hinzugefügt
+- **Konstanten in den Annotationen:** `ann_constant` (Agentenwerkzeug `mark_constant`, JSON-Schlüssel `constants`) markiert einen Befehl, dessen Immediate eine Zahl und keine Adresse ist. Das Listing erfand bisher für jeden langen Immediate, der auf eine Adresse im Programm fällt, ein Platzhalterlabel und schrieb `[#imm = …]` dazu; bei Größen, Anzahlen, Offsets und Wortpaaren (`#$00050006`) war das falsch und zerteilte Code oder Daten. Gefunden bei der Durchsicht des Listings eines 364-KB-Spiels (42 Stellen).
+
+### Geändert
+- **Adressen in annotierten Variablen und Datenbereichen** bekommen im Listing keinen Platzhalter mehr, sondern erscheinen als `name+offset` (die EQU-Zeilen `data_00EF3A` entfallen).
+- **Offsets in `name+offset`** werden ab 10 hexadezimal geschrieben (`player1_state+$26`), kleinere bleiben unverändert.
+
 ## [0.5.0] - 2026-11-07
 
 Erste vollständige Fassung: Assembler (mit Hunk-Ausgabe), Disassembler, Emulator, Monitor, Agenten-Schnittstelle, Amiga-500-Speicherkarte mit OS-Emulation,

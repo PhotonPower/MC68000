@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -53,6 +54,12 @@ public:
     std::optional<std::string> setData(const DataRegion& region);
     void setComment(Address address, const std::string& text) { comments_[address & kAddressMask] = text; }
     void setBlockComment(Address address, const std::string& text) { blockComments_[address & kAddressMask] = text; }
+    /// Marks the instruction at `address` as one whose immediate operand is a plain number, not an address: the listing
+    /// then neither invents a label for the value nor adds an `[#imm = ...]` note.
+    void setConstant(Address address, bool on) {
+        if (on) constants_.insert(address & kAddressMask);
+        else constants_.erase(address & kAddressMask);
+    }
     void setTitle(const std::string& title) { title_ = title; }
 
     bool removeLabel(Address address);  ///< also removes a routine/variable/data name at that address
@@ -71,6 +78,7 @@ public:
     [[nodiscard]] std::optional<Address> addressOf(const std::string& name) const;
     [[nodiscard]] const RoutineDoc* routineAt(Address address) const;
     [[nodiscard]] const std::string* commentAt(Address address) const;
+    [[nodiscard]] bool isConstant(Address address) const { return constants_.count(address & kAddressMask) != 0; }
     [[nodiscard]] const std::string* blockCommentAt(Address address) const;
     [[nodiscard]] const DataRegion* dataAt(Address address) const;     ///< region *starting* at address
     [[nodiscard]] const DataRegion* dataCovering(Address address) const;  ///< region that contains address
@@ -82,6 +90,7 @@ public:
     [[nodiscard]] const std::map<Address, DataRegion>& dataRegions() const { return data_; }
     [[nodiscard]] const std::map<Address, std::string>& comments() const { return comments_; }
     [[nodiscard]] const std::map<Address, std::string>& blockComments() const { return blockComments_; }
+    [[nodiscard]] const std::set<Address>& constants() const { return constants_; }
     [[nodiscard]] const std::string& title() const { return title_; }
 
     [[nodiscard]] Json toJson() const;
@@ -98,6 +107,7 @@ private:
     std::map<Address, DataRegion> data_;
     std::map<Address, std::string> comments_;
     std::map<Address, std::string> blockComments_;
+    std::set<Address> constants_;   ///< instructions whose immediate is a number, not a pointer
     std::string title_;
 };
 

@@ -48,7 +48,8 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
     std::set<Address> placeholders;
     auto placeholder = [&](const char* prefix, Address a) { return std::string(prefix) + hexDigits(a, 6); };
     auto markPlaceholder = [&](Address a, const char* prefix) {
-        if (!inRange(a) || !lineStartOk(a) || ann.nameAt(a)) return;
+        // An address inside a documented variable or data region is written as name+offset, not as a placeholder label.
+        if (!inRange(a) || !lineStartOk(a) || ann.nameAt(a) || ann.expressionFor(a)) return;
         if (names.count(a)) return;
         names[a] = placeholder(prefix, a);
         placeholders.insert(a);
@@ -63,7 +64,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
     // A long immediate that equals an address inside the range is very likely a pointer (MOVE.L #table,A0).
     // Giving it a label only adds a name and never changes bytes, so a coincidence costs nothing.
     for (const auto& [ia, in] : analysis.code()) {
-        if (!inRange(ia)) continue;
+        if (!inRange(ia) || ann.isConstant(ia)) continue;   // a marked constant is a number, not a pointer
         const std::size_t hash = in.operands.find("#$");
         if (hash == std::string::npos || in.operands.size() < hash + 10) continue;
         const std::string digits = in.operands.substr(hash + 2, 8);
@@ -345,7 +346,7 @@ ListingResult renderListing(const Memory& view, const Analysis& analysis, const 
             if (const std::string* c = ann.commentAt(a)) comment += (comment.empty() ? "" : " ") + *c;
             // an immediate that equals a known address is probably a pointer: say so (comment only)
             const std::size_t hash = in.operands.find("#$");
-            if (hash != std::string::npos && in.operands.size() >= hash + 10) {
+            if (!ann.isConstant(a) && hash != std::string::npos && in.operands.size() >= hash + 10) {
                 const std::string digits = in.operands.substr(hash + 2, 8);
                 if (digits.find_first_not_of("0123456789ABCDEF") == std::string::npos) {
                     const Long value = static_cast<Long>(std::stoul(digits, nullptr, 16));

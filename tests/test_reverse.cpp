@@ -392,6 +392,66 @@ int main() {
         CHECK(!res.text.empty());
     }
     {
+        // a marked constant is a number, not a pointer; an address inside a variable is written as name+offset
+        Memory mem;
+        const std::vector<Byte> bytes = {0x20, 0x7C, 0x00, 0x00, 0x10, 0x20,   // $1000 MOVEA.L #$1020,A0 (a real pointer)
+                                         0x20, 0x3C, 0x00, 0x00, 0x10, 0x06,   // $1006 MOVE.L  #$1006,D0 (a constant that equals an address)
+                                         0x10, 0x39, 0x00, 0x00, 0x10, 0x32,   // $100C MOVE.B  $1032.L,D0 (inside the variable)
+                                         0x4E, 0x75,                           // $1012 RTS
+                                         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // $1014..$101F
+                                         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,   // $1020 data
+                                         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};  // $1030 the variable
+        mem.load(0x1000, bytes);
+        const Address end = 0x1000 + static_cast<Address>(bytes.size());
+        Analysis an(mem, 0x1000, end);
+        an.addEntry(0x1000);
+        an.analyzeFlow();
+        ListingOptions lo;
+        lo.from = 0x1000;
+        lo.to = end;
+
+        ListingResult res = renderListing(mem, an, Annotations{}, lo);
+        CHECK(res.verified);
+        CHECK(has(res.text, "[#imm = data_001020]"));   // the pointer is recognised
+        CHECK(has(res.text, "[#imm = loc_001006]"));    // and so is the coincidence
+        CHECK(has(res.text, "loc_001006:"));
+        CHECK(has(res.text, "data_001032"));             // no variable known: a placeholder
+
+        Annotations ann;
+        ann.setConstant(0x1006, true);
+        VariableDoc v;
+        v.name = "var";
+        v.address = 0x1030;
+        v.size = 16;
+        CHECK(!ann.setVariable(v).has_value());
+        res = renderListing(mem, an, ann, lo);
+        CHECK(res.verified);
+        CHECK(has(res.text, "[#imm = data_001020]"));    // pointers keep their note
+        CHECK(!has(res.text, "[#imm = loc_001006]"));
+        CHECK(!has(res.text, "loc_001006"));             // the constant creates no label
+        CHECK(has(res.text, "var+2"));
+        CHECK(!has(res.text, "data_001032"));            // the variable names the address
+
+        // annotations survive a JSON round trip, and removing a comment/label at the address also removes the mark
+        const Annotations back = Annotations::fromJson(Json::parse(ann.toJson().dump()));
+        CHECK(back.isConstant(0x1006));
+        CHECK(!back.isConstant(0x1000));
+        CHECK_EQ(back.constants().size(), std::size_t{1});
+        Annotations gone = back;
+        CHECK(gone.removeComment(0x1006));
+        CHECK(!gone.isConstant(0x1006));
+
+        // large offsets are written in hexadecimal, small ones stay bare
+        VariableDoc big;
+        big.name = "big";
+        big.address = 0x2000;
+        big.size = 100;
+        Annotations a2;
+        CHECK(!a2.setVariable(big).has_value());
+        CHECK_EQ(a2.expressionFor(0x2026).value(), std::string("big+$26"));
+        CHECK_EQ(a2.expressionFor(0x2003).value(), std::string("big+3"));
+    }
+    {
         // random programs and random annotations: the listing must always be verified
         std::mt19937 rng(777);
         const Word common[] = {0x4E75, 0x4E71, 0x6000, 0x6100, 0x6700, 0x6600, 0x4EB9, 0x4EF9, 0x41FA, 0x4879, 0x33FC, 0x51C8,
@@ -498,6 +558,14 @@ int main() {
         CHECK(ok(call(s, "{\"cmd\":\"ann_variable\",\"name\":\"line_count\",\"addr\":\"count\",\"size\":2,\"comment\":\"lines\"}")));
         CHECK(ok(call(s, "{\"cmd\":\"ann_comment\",\"addr\":\"main\",\"text\":\"A0 = text\"}")));
         CHECK(ok(call(s, "{\"cmd\":\"ann_title\",\"title\":\"demo\"}")));
+        CHECK(ok(call(s, "{\"cmd\":\"ann_constant\",\"addr\":\"main\"}")));
+        Json cl = call(s, "{\"cmd\":\"ann_list\"}");
+        CHECK_EQ(cl.find("annotations")->find("constants")->items().size(), std::size_t{1});
+        Json badc = call(s, "{\"cmd\":\"ann_constant\",\"addr\":\"main+2\"}");   // inside LEA
+        CHECK(!ok(badc));
+        CHECK(str(badc, "error").find("first byte") != std::string::npos);
+        CHECK(ok(call(s, "{\"cmd\":\"ann_constant\",\"addr\":\"main\",\"remove\":true}")));
+        CHECK_EQ(call(s, "{\"cmd\":\"ann_list\"}").find("annotations")->find("constants")->items().size(), std::size_t{0});
         // mistakes are rejected with an explanation
         Json bad = call(s, "{\"cmd\":\"ann_label\",\"addr\":\"emit\",\"name\":\"D3\"}");
         CHECK(!ok(bad));

@@ -214,6 +214,8 @@ TOOLS = [
     _fn("add_comment", "Comment for one line of code (appears behind the instruction), or a block comment above it. Use the exact address "
                        "from the right-hand comment of the listing line; an address inside an instruction is refused.",
         {"addr": ADDR, "text": {"type": "string"}, "block": {"type": "boolean"}}, ["addr", "text"]),
+    _fn("mark_constant", "Mark the instruction at an address as one whose immediate operand is a plain NUMBER, not an address (a size, count, offset, packed pair such as $00050006): the listing then neither invents a label for the value nor notes it as [#imm = ...]. Use the address of the instruction itself; remove=true takes the mark back.",
+        {"addr": ADDR, "remove": {"type": "boolean"}}, ["addr"]),
     _fn("finish_routine", "Call when the routine is fully documented and commented.", {"summary": {"type": "string"}}),
 ]
 
@@ -632,6 +634,10 @@ class Tools:
         self.s.ok(cmd="ann_comment", addr=norm_addr(addr), text=text, block=bool(block))
         return "ok"
 
+    def t_mark_constant(self, addr, remove=False):
+        self.s.ok(cmd="ann_constant", addr=norm_addr(addr), remove=bool(remove))
+        return "ok: constant mark removed" if remove else "ok: constant marked"
+
     def completeness_problems(self, rng=None):
         """What is still missing in a routine's listing (names, comments); `rng` is one (first, end) or a list of them,
         default: the routine being processed (its blocks)."""
@@ -714,7 +720,8 @@ How you work:
    writes and exceptions with what you expected. Do not guess when you can run it.
 3. Record what you learned with the annotation tools: document_routine (name, summary, inputs, outputs, clobbers), name_variable for
    every memory location that has a meaning, mark_data for tables/strings/pointer lists, name_label for loops and branch targets,
-   add_comment for the non-obvious lines.
+   add_comment for the non-obvious lines. A line that says [#imm = loc_XXXXXX] or [#imm = data_XXXXXX] for a value that is a number and
+   not an address (a size, count, offset, a packed pair like $00050006): mark_constant on that instruction, do not name the "label".
 4. Call finish_routine when done.
 
 MC68000 / Amiga facts that are easy to get wrong:

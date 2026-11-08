@@ -33,7 +33,7 @@ ann = importlib.util.module_from_spec(_spec)
 sys.modules["m68k_annotate"] = ann
 _spec.loader.exec_module(ann)
 
-ANNOTATING = {"name_label", "document_routine", "name_variable", "mark_data", "add_comment", "finish_routine", "remove_annotation"}
+ANNOTATING = {"name_label", "document_routine", "name_variable", "mark_data", "add_comment", "mark_constant", "finish_routine", "remove_annotation"}
 
 
 class DriveError(Exception):

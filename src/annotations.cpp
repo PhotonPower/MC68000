@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <set>
 
 #include "m68k/amiga.hpp"
@@ -174,7 +175,7 @@ bool Annotations::removeLabel(Address address) {
 
 bool Annotations::removeComment(Address address) {
     address &= kAddressMask;
-    return comments_.erase(address) + blockComments_.erase(address) > 0;
+    return comments_.erase(address) + blockComments_.erase(address) + constants_.erase(address) > 0;
 }
 
 void Annotations::clear() { *this = Annotations{}; }
@@ -185,13 +186,24 @@ std::optional<std::string> Annotations::nameAt(Address a) const {
     return it->second;
 }
 
+namespace {
+/// The offset of a "name+offset" expression, written like the other numbers of a listing: hexadecimal ("$26"); below ten the
+/// digit is the same in both bases and stays bare ("2").
+std::string plusHex(Address offset) {
+    char buf[16];
+    if (offset < 10) std::snprintf(buf, sizeof buf, "%u", static_cast<unsigned>(offset));
+    else std::snprintf(buf, sizeof buf, "$%X", static_cast<unsigned>(offset));
+    return buf;
+}
+}  // namespace
+
 std::optional<std::string> Annotations::expressionFor(Address a) const {
     a &= kAddressMask;
     if (const auto n = nameAt(a)) return n;
     for (const VariableDoc& v : variables_)
-        if (a > v.address && a < v.address + v.size) return v.name + "+" + std::to_string(a - v.address);
+        if (a > v.address && a < v.address + v.size) return v.name + "+" + plusHex(a - v.address);
     for (const auto& [start, r] : data_)
-        if (!r.name.empty() && a > start && a < start + r.length) return r.name + "+" + std::to_string(a - start);
+        if (!r.name.empty() && a > start && a < start + r.length) return r.name + "+" + plusHex(a - start);
     return std::nullopt;
 }
 
@@ -300,6 +312,13 @@ Json Annotations::toJson() const {
         blocks.push(e);
     }
     j.set("block_comments", blocks);
+    Json constants = Json::array();
+    for (const Address a : constants_) {
+        Json e = Json::object();
+        e.set("addr", hexAddr(a));
+        constants.push(e);
+    }
+    j.set("constants", constants);
     return j;
 }
 
@@ -348,6 +367,8 @@ Annotations Annotations::fromJson(const Json& j) {
         for (const Json& e : l->items()) a.setComment(parseAddr(need(e, "addr")), getStr(e, "text"));
     if (const Json* l = j.find("block_comments"))
         for (const Json& e : l->items()) a.setBlockComment(parseAddr(need(e, "addr")), getStr(e, "text"));
+    if (const Json* l = j.find("constants"))
+        for (const Json& e : l->items()) a.setConstant(parseAddr(need(e, "addr")), true);
     return a;
 }
 
